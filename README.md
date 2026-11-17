@@ -2,7 +2,7 @@
 
 A standalone Go LAN bridge with an embedded AURGA Viewer browser UI. Runtime dependencies: the binary and a browser with WebCodecs. No vendor app, cloud account, Node or Bun runtime is required.
 
-**Experimental. Real-device video and HID control have not passed acceptance.** Discovery, configuration authentication and stream authentication work on the tested AURGA at `192.168.1.94`, now reporting firmware `5.0.0.0`. The device reports no HDMI signal, so live video and control cannot yet be verified. Native tests, race detection and a full synthetic UDP → Go → WebSocket → browser H.264/HID roundtrip pass.
+**Experimental. Real-device HID control has not passed acceptance.** Discovery, configuration authentication, stream authentication and live H.264 video work on the tested AURGA at `192.168.1.94`, firmware `5.0.0.0`. A read-only Chromium check rendered 1920×1080 video (26 frames over three seconds), without saving screen contents. This is an initial video smoke test, not sustained-performance acceptance. Native tests, race detection and a full synthetic UDP → Go → WebSocket → browser H.264/HID roundtrip pass.
 
 The local HTTPS service is installed at **https://192.168.1.167:9443/**. Accept its self-signed LAN certificate and enter the device passcode. It is managed by `aurga-web.service`; source is under `/workspace/projects/aurga-web`, the deployed binary and certificate state under `/workspace/deployments/aurga-web`.
 
@@ -70,7 +70,7 @@ The implementation reconstructs wire behaviour from the vendor's Android APK 2.3
 - No firmware updates, Wi-Fi changes, reset, cloud binding, Wake-on-LAN or configuration mutation endpoints.
 - Legacy TCP streaming and USB transport are not implemented.
 
-The session handshake has passed real-device authentication. Video reassembly and HID wire paths have passed a full synthetic end-to-end test, but need a real HDMI signal and live acceptance before frequent use. See [protocol notes](docs/protocol.md) and [scope](docs/scope.md).
+The session handshake and video reassembly have passed an initial real-device browser check. HID wire paths have passed a full synthetic end-to-end test, but live keyboard/mouse acceptance and sustained video testing remain before frequent use. See [protocol notes](docs/protocol.md) and [scope](docs/scope.md).
 
 ## Disposable paths
 
