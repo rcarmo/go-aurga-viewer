@@ -181,6 +181,8 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		ws.Close(websocket.StatusTryAgainLater, "Viewer already in use")
 		return
 	}
+	log.Printf("aurga viewer opened: read_only=%t", first.ReadOnly)
+	defer log.Printf("aurga viewer closed")
 	events := make(chan aurga.Event, 32)
 	inputs := make(chan aurga.Input, 64)
 	result := make(chan error, 1)
@@ -197,17 +199,21 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 			}
 			if ev.Input != nil {
 				d := ev.Input
-				log.Printf("aurga device input: ready=%t received=%d sent=%d ack=%d retries=%d command_seq=%d", d.Ready, d.Received, d.Sent, d.Acknowledged, d.Retries, d.CommandSequence)
+				log.Printf("aurga device input: ready=%t received=%d sent=%d ack=%d retries=%d command_seq=%d relative=%d absolute=%d clicks=%d motion=%d", d.Ready, d.Received, d.Sent, d.Acknowledged, d.Retries, d.CommandSequence, d.Relative, d.Absolute, d.Clicks, d.Motion)
 			}
 			select {
 			case events <- ev:
 			case <-ctx.Done():
 			default:
 				if ev.Type != "pcm" {
+					log.Printf("aurga viewer stopped: event queue full, event=%s", ev.Type)
 					cancel()
 				}
 			}
 		})
+		if err != nil && ctx.Err() == nil {
+			log.Printf("aurga viewer session failed: timeout=%t", strings.Contains(err.Error(), "timed out") || strings.Contains(err.Error(), "no response"))
+		}
 		result <- err
 	}()
 	go func() {
@@ -216,10 +222,12 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		for {
 			typ, data, e := ws.Read(ctx)
 			if e != nil {
+				log.Printf("aurga viewer read ended: close_status=%d cancelled=%t", websocket.CloseStatus(e), ctx.Err() != nil)
 				return
 			}
 			var cmd command
 			if typ != websocket.MessageText || json.Unmarshal(data, &cmd) != nil {
+				log.Printf("aurga viewer stopped: invalid message")
 				return
 			}
 			var in aurga.Input
@@ -242,14 +250,17 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 				in.Enable = &b
 			case "input":
 				if aurga.ValidateReport(cmd.Report) != nil {
+					log.Printf("aurga viewer stopped: invalid input report")
 					return
 				}
 				in.Report = cmd.Report
 			case "refresh":
 				in.Refresh = true
 			case "disconnect":
+				log.Printf("aurga viewer stopped: client disconnect request")
 				return
 			default:
+				log.Printf("aurga viewer stopped: unknown command")
 				return
 			}
 			select {
@@ -257,6 +268,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 			case <-ctx.Done():
 				return
 			default:
+				log.Printf("aurga viewer stopped: input queue full")
 				return
 			}
 		}
@@ -287,6 +299,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 			err := ws.Write(writeCtx, typ, message)
 			stop()
 			if err != nil {
+				log.Printf("aurga viewer write ended: close_status=%d cancelled=%t", websocket.CloseStatus(err), ctx.Err() != nil)
 				return
 			}
 		case err := <-result:

@@ -2,7 +2,7 @@
 
 A standalone Go bridge that opens an AURGA KVM's HDMI stream in a browser. The binary embeds the UI and connects directly over the LAN. It needs no cloud account, vendor runtime, Node or Bun at runtime.
 
-**Experimental:** live 1920×1080 H.264 video, discovery and authentication have been verified with firmware 5.0.0.0. Keyboard, mouse, touch and software-keyboard paths pass synthetic end-to-end tests in Chromium and WebKit. Physical iPad input and sustained streaming performance still need acceptance; device acknowledgements do not establish host input effects. Audible output has not been verified.
+**Experimental:** live 1920×1080 H.264 video, discovery and authentication have been verified with firmware 5.0.0.0. Keyboard, mouse, touch and software-keyboard paths pass synthetic end-to-end tests in Chromium and WebKit. Keyboard input has been confirmed on one real host. Relative mouse/touch input and sustained streaming performance still need acceptance; device acknowledgements do not establish host input effects. Audible output has not been verified.
 
 This is an independent interoperability project, not an official AURGA product.
 
@@ -31,7 +31,7 @@ TLS certificates persist in the user configuration directory under `aurga-web`, 
 - A passcode interstitial opens a video page with small keyboard and input-diagnostics buttons.
 - The **i** button shows browser event/report counters, bridge sends/ACKs and audio format/packet/playback counters. Diagnostic logs contain counts and protocol operation numbers only, not keys, coordinates, PCM samples or passcodes.
 - Keyboard and mouse are enabled by default after the device acknowledges negotiation. **Use `?view=1` for a read-only session.**
-- Mouse buttons, wheel and direct-touch tap/drag use absolute coordinates. Native Touch Events handle iPad touch; Pointer Events handle mouse/pen.
+- Mouse buttons and wheel use relative HID reports by default for host compatibility. Touch acts as a trackpad: swipe to move the cursor, tap to click at its current position, or hold for half a second then move to drag. Native Touch Events handle iPad touch; Pointer Events handle mouse/pen. `?mouse=absolute` restores direct-coordinate mouse/touch input on hosts that support it.
 - The keyboard button opens a mobile text input from its touch gesture. Text uses the vendor's atomic software-keyboard report. ASCII, Enter and Backspace are supported with a US host keyboard layout; arbitrary Unicode is unsupported.
 - Reports are paced by device acknowledgements and bounded queues. Blur and normal disconnect send release reports. A broken network can prevent remote release; use the official app if input becomes stuck.
 - One viewer is admitted at a time. Concurrent use with the official app is untested.

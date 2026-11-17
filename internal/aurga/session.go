@@ -12,6 +12,10 @@ import (
 
 // InputStats contains counts only: never HID payloads, keys or coordinates.
 type InputStats struct {
+	Relative        uint64 `json:"relative"`
+	Absolute        uint64 `json:"absolute"`
+	Clicks          uint64 `json:"clicks"`
+	Motion          uint64 `json:"motion"`
 	Received        uint64 `json:"received"`
 	Sent            uint64 `json:"sent"`
 	Acknowledged    uint64 `json:"acknowledged"`
@@ -248,6 +252,17 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 					return errors.New("input queue full; control stopped")
 				}
 				stats.Received++
+				switch in.Report[0] {
+				case 2:
+					stats.Relative++
+					if in.Report[2] != 0 || in.Report[3] != 0 {
+						stats.Motion++
+					}
+				case 4:
+					stats.Absolute++
+				case 20:
+					stats.Clicks++
+				}
 				inputQueue = append(inputQueue, append([]byte(nil), in.Report...))
 			}
 		default:
@@ -430,7 +445,7 @@ func ValidateReport(b []byte) error {
 	if len(b) == 7 && b[0] == 4 && b[1]&^byte(7) == 0 && binary.LittleEndian.Uint16(b[2:]) <= 32767 && binary.LittleEndian.Uint16(b[4:]) <= 32767 {
 		return nil
 	}
-	if len(b) == 5 && b[0] == 2 && b[1]&^byte(7) == 0 {
+	if len(b) == 5 && (b[0] == 2 || b[0] == 20) && b[1]&^byte(7) == 0 {
 		return nil
 	}
 	return errors.New("invalid HID report")

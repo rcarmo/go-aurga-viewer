@@ -5,7 +5,8 @@ try {
  const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1024,height:768},hasTouch:true,isMobile:true});
  const page=await context.newPage(),errors:string[]=[];
  page.on('pageerror',e=>errors.push(e.message));
- await page.goto(process.env.AURGA_TEST_URL!);
+ const absoluteURL=new URL(process.env.AURGA_TEST_URL!);absoluteURL.searchParams.set('mouse','absolute');
+ await page.goto(absoluteURL.toString());
  await page.waitForSelector('#gate[open]');
  await page.fill('#passcode','test');await page.click('#connect');
  async function ready(){await page.waitForFunction(()=>document.querySelector('#placeholder')?.hidden===true&&controlling,{},{timeout:10000});}
@@ -48,6 +49,22 @@ try {
  if(!counts.touch||!counts.keyboard||!counts.text||!counts.sent||!counts.acknowledged)throw Error('Browser event/report counts missing');
  await page.reload();await ready();
  if(await page.inputValue('#passcode'))throw Error('Credential retained in field');
+ // Default compatibility path: relative mouse and trackpad touch.
+ const relativeURL=new URL(process.env.AURGA_TEST_URL!);
+ await page.goto(relativeURL.toString());await ready();
+ const r=await page.locator('canvas').boundingBox();if(!r)throw Error('No relative canvas');
+ const x=r.x+r.width/2,y=r.y+r.height/2;
+ await page.mouse.move(x,y);await drained();
+ await page.mouse.move(x+60,y+20);await drained();
+ await page.mouse.move(x-60,y-20);await drained();
+ await page.mouse.down();await drained();await page.mouse.move(x,y);await drained();await page.mouse.up();await drained();
+ await page.touchscreen.tap(x,y);await drained();
+ const touchEvent=async(type:string,dx=0)=>{await page.evaluate(({type,x,y})=>{const e=new Event(type,{bubbles:true,cancelable:true});Object.defineProperty(e,'changedTouches',{value:[{identifier:71,clientX:x,clientY:y}]});document.querySelector('#screen').dispatchEvent(e);},{type,x:x+dx,y});};
+ await touchEvent('touchstart');await page.waitForTimeout(550);await drained();await touchEvent('touchmove',45);await drained();await touchEvent('touchend',45);await drained();
+ const sent=await page.evaluate(()=>inputDiagnostics.sent);
+ await touchEvent('touchstart');await touchEvent('touchcancel');await page.waitForTimeout(550);
+ if(await page.evaluate(()=>inputDiagnostics.sent)!==sent)throw Error('Cancelled touch sent a delayed click');
+ await page.waitForFunction(()=>deviceInput?.motion>0&&deviceInput?.clicks>0&&deviceInput?.relative>0);
  if(errors.length)throw Error(errors.join('; '));
  console.log(`PASS (${engine}): real HTTPS/UDP bridge, native touch tap, drag handler/release, touch keyboard focus, atomic software-key taps, Enter/Backspace, blur queue preservation and cookie reload`);
  await context.close();

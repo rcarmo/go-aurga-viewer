@@ -59,12 +59,12 @@ func TestDiscovery(t *testing.T) {
 	}
 }
 func TestReportValidation(t *testing.T) {
-	for _, b := range [][]byte{{1, 0, 0, 4, 0, 0, 0, 0, 0}, {4, 1, 0xff, 0x7f, 0, 0, 0}, {2, 0, 0, 0, 0}} {
+	for _, b := range [][]byte{{1, 0, 0, 4, 0, 0, 0, 0, 0}, {4, 1, 0xff, 0x7f, 0, 0, 0}, {2, 0, 0, 0, 0}, {20, 1, 0, 0, 0}, {2, 1, 129, 127, 0}} {
 		if e := ValidateReport(b); e != nil {
 			t.Fatal(e)
 		}
 	}
-	for _, b := range [][]byte{{}, {1}, {4, 8, 0, 0, 0, 0, 0}, {4, 0, 0, 128, 0, 0, 0}} {
+	for _, b := range [][]byte{{}, {1}, {4, 8, 0, 0, 0, 0, 0}, {4, 0, 0, 128, 0, 0, 0}, {20, 8, 0, 0, 0}, {20, 1, 0, 0}} {
 		if ValidateReport(b) == nil {
 			t.Fatalf("accepted %v", b)
 		}

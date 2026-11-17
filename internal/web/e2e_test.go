@@ -102,8 +102,23 @@ func TestBrowserEndToEnd(t *testing.T) {
 	right, wheel := false, false
 	backspace, enter := false, false
 	softwareTap := false
+	relativePositive, relativeNegative, relativeHeld, atomicClick := false, false, false, false
 	touchPresses := 0
 	for report := range received {
+		if len(report) == 8 && report[3] == 2 {
+			if int8(report[5]) > 0 {
+				relativePositive = true
+			}
+			if int8(report[5]) < 0 {
+				relativeNegative = true
+			}
+			if report[4] == 1 {
+				relativeHeld = true
+			}
+		}
+		if len(report) == 8 && report[3] == 20 && report[4] == 1 {
+			atomicClick = true
+		}
 		if len(report) == 12 && (report[3] == 1 || report[3] == 10) {
 			if report[3] == 10 && report[4] == 2 && report[6] == 11 {
 				softwareTap = true
@@ -144,6 +159,9 @@ func TestBrowserEndToEnd(t *testing.T) {
 				}
 			}
 		}
+	}
+	if !relativePositive || !relativeNegative || !relativeHeld || !atomicClick {
+		t.Fatalf("missing relative input: positive=%t negative=%t held=%t atomicClick=%t", relativePositive, relativeNegative, relativeHeld, atomicClick)
 	}
 	if !key || !mouse || !release || !touch || !drag || !mouseRelease || !right || !wheel || !backspace || !enter || !softwareTap || touchPresses != 1 {
 		t.Fatalf("missing HID: key=%t mouse=%t release=%t touch=%t drag=%t mouseRelease=%t right=%t wheel=%t backspace=%t enter=%t softwareTap=%t touchPresses=%d", key, mouse, release, touch, drag, mouseRelease, right, wheel, backspace, enter, softwareTap, touchPresses)
