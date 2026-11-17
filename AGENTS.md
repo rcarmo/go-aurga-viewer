@@ -1,7 +1,25 @@
-# aurga-web
+# aurga-web development
 
-Standalone Go bridge and embedded browser UI for one LAN AURGA Viewer session. Default target: first LAN discovery reply; ?ip=private-IPv4 overrides it. Optional -device sets a startup default. Auth cookies are device-bound and backed only by bounded server memory. Do not change device configuration, reset, update firmware or send unsolicited input. The UI enables input by default at Rui's request (17 November 2026). Diagnostic live tests use ?view=1 or Session.InitialInput=false; the opt-in neutral keyboard ACK test sends no pressed keys. Do not type or move the pointer during live checks without agreement. Never commit passcodes, session secrets or screen captures. Credentials come from AURGA_PASSCODE or an HTTPS UI session and stay in memory.
+The Go binary embeds a LAN browser viewer. The default target is the first private-IPv4 discovery reply; `?ip=` overrides it and `-device` sets an optional default. Cookies are device-bound and backed by bounded server memory.
 
-Use make check and make race. UI/input changes require make browser-e2e and AURGA_BROWSER=webkit make browser-e2e. WebKit's native Playwright tap/focus is tested; its drag/wheel tests dispatch DOM events and do not establish physical iPad acceptance. Software-keyboard taps use vendor report 10, physical held-state reports use 1. Ordinary tests do not collect profiles. Portable disposable layout: WORKSPACE_TMP_BASE overrides the base; otherwise CI (except empty/0/false) uses RUNNER_TEMP, inherited TMPDIR, /tmp; local uses writable /workspace/tmp or inherited TMPDIR or /tmp. Append aurga-web. Makefile snapshots inherited TMPDIR before exporting scoped runs/, cache/go-build (GOCACHE), cache/go-mod (GOMODCACHE), build/ (GOTMPDIR), cache/bun (BUN_INSTALL_CACHE_DIR), tests/, logs/. No worktree suffix currently. No project-local build caches. Runtime certificates are persistent service data and belong in an explicit state directory or the user's config directory.
+## Safety
 
-Protocol evidence: /workspace/notes/projects/aurga/README.md and evidence/. Vendor libraries/APKs are analysis inputs, not runtime dependencies or project source. Reimplement documented wire behaviour; cite native function names for recovered constants. Include synthetic tests, malformed packets, timeouts and server access controls. Distinguish tests from real-device verification.
+- Never change device settings, reset/update firmware or send unsolicited input.
+- Input is enabled by default in the UI. Diagnostic live checks must use `?view=1` or `Session.InitialInput=false`.
+- Live key/click actions require explicit agreement. The opt-in neutral keyboard ACK test sends an all-keys-released report; it is still a live HID action.
+- Never commit passcodes, tokens, TLS keys, screen captures, vendor binaries or decompiled listings.
+- Source compatibility comes from protocol research; keep function references in `docs/protocol.md`. Do not describe this work as a clean-room implementation.
+
+## Verification
+
+Use `make check`, `make verify-modules` and `make race`. UI/input changes also require `make browser-e2e` and `AURGA_BROWSER=webkit make browser-e2e`. Browser E2E uses a loopback synthetic peer, not a live KVM. WebKit's native tap/focus is tested; DOM drag/wheel tests do not establish physical iPad acceptance. Software-keyboard taps use vendor report 10; physical held-state uses report 1. Distinguish implemented, synthetic-tested and live-accepted behaviour.
+
+Ordinary tests do not collect profiles. Measure representative workloads during performance work, retain concise findings and remove owned raw profiling captures after analysis.
+
+## Build and temporary paths
+
+`WORKSPACE_TMP_BASE` overrides the base. Otherwise CI (except unset, empty, `0` or `false`) uses `RUNNER_TEMP`, inherited `TMPDIR`, then `/tmp`. Local builds prefer writable `/workspace/tmp`, then inherited `TMPDIR` or `/tmp`. Always append `aurga-web`; no worktree suffix is currently defined. Make snapshots inherited `TMPDIR` before exporting scoped values.
+
+Layout: `runs` (`TMPDIR`), `cache/go-build` (`GOCACHE`), `cache/go-mod` (`GOMODCACHE`), `cache/bun` (`BUN_INSTALL_CACHE_DIR`), `build` (`GOTMPDIR` and binaries), `tests`, and `logs`. No project-local caches. Do not clean directories used by another process. Shared installed browsers may use `/workspace/bin/pw-browsers`; `PLAYWRIGHT_BROWSERS_PATH` can override this.
+
+TLS state and curated release archives belong outside disposable paths. `make dist DIST_DIR=/durable/path` packages a clean committed tree without Git history. Retain `LICENSE` and `THIRD_PARTY_NOTICES.md` in distributions; do not publish local history without a separate review.

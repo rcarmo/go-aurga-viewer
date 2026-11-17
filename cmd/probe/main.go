@@ -13,13 +13,13 @@ import (
 )
 
 func main() {
-	device := flag.String("device", "192.168.1.94", "private device IPv4")
+	device := flag.String("device", "", "required private device IPv4")
 	stream := flag.Bool("stream", false, "attempt a read-only video session for six seconds")
 	port := flag.Int("stream-port", 0, "override UDP stream port")
 	trace := flag.Bool("trace", false, "print packet header metadata only")
 	flag.Parse()
 	ip := net.ParseIP(*device)
-	if ip == nil || !ip.IsPrivate() {
+	if ip == nil || ip.To4() == nil || !ip.IsPrivate() {
 		fmt.Fprintln(os.Stderr, "an explicit private IPv4 is required")
 		os.Exit(1)
 	}

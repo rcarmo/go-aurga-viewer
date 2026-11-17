@@ -19,13 +19,28 @@ export BUN_INSTALL_CACHE_DIR := $(WORK)/cache/bun
 ifneq ($(wildcard /workspace/bin/pw-browsers),)
 export PLAYWRIGHT_BROWSERS_PATH ?= /workspace/bin/pw-browsers
 endif
-.PHONY: dirs install build test browser-test browser-e2e race lint fmt check clean
+.PHONY: dirs deps install verify-modules build print-binary probe dist test browser-test browser-e2e race lint fmt check clean
 dirs:
 	@mkdir -p $(TMPDIR) $(GOCACHE) $(GOMODCACHE) $(GOTMPDIR) $(WORK)/tests $(WORK)/logs
-install: dirs
+deps: dirs
 	go mod download all
+install: deps
+verify-modules: dirs
+	go mod verify
 build: dirs
 	go build -trimpath -o $(WORK)/build/aurga-web ./cmd/aurga-web
+probe: dirs
+	go run ./cmd/probe -device "$(DEVICE)" $(PROBE_FLAGS)
+print-binary:
+	@printf '%s\n' '$(WORK)/build/aurga-web'
+dist:
+	@test -n "$(DIST_DIR)" || { echo 'Set DIST_DIR to a durable release directory'; exit 1; }
+	@test -z "$$(git status --porcelain)" || { echo 'Commit source changes before packaging'; exit 1; }
+	@mkdir -p "$(DIST_DIR)"
+	@name="aurga-web-$$(git rev-parse --short HEAD).tar.gz"; \
+	git archive --format=tar.gz --prefix=aurga-web/ --output="$(DIST_DIR)/$$name" HEAD && \
+	(cd "$(DIST_DIR)" && if command -v sha256sum >/dev/null 2>&1; then sha256sum "$$name"; else shasum -a 256 "$$name"; fi > "$$name.sha256") && \
+	printf '%s\n' "$(DIST_DIR)/$$name"
 test: dirs
 	go test ./...
 browser-test: build

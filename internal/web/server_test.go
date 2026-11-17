@@ -93,7 +93,7 @@ func TestWebsocketUntrustedOrigin(t *testing.T) {
 }
 func TestCertificatePersistenceAndPermissions(t *testing.T) {
 	dir := t.TempDir()
-	cp, kp, e := Certificate(dir, "192.168.1.167")
+	cp, kp, e := Certificate(dir, "192.168.10.10")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -103,7 +103,7 @@ func TestCertificatePersistenceAndPermissions(t *testing.T) {
 	}
 	block, _ := pem.Decode(cert)
 	parsed, e := x509.ParseCertificate(block.Bytes)
-	if e != nil || parsed.VerifyHostname("192.168.1.167") != nil {
+	if e != nil || parsed.VerifyHostname("192.168.10.10") != nil {
 		t.Fatal(e)
 	}
 	if _, e = tls.LoadX509KeyPair(cp, kp); e != nil {
@@ -113,7 +113,7 @@ func TestCertificatePersistenceAndPermissions(t *testing.T) {
 	if info.Mode().Perm() != 0600 {
 		t.Fatal(info.Mode())
 	}
-	Certificate(dir, "192.168.1.167")
+	Certificate(dir, "192.168.10.10")
 	again, _ := os.ReadFile(cp)
 	if string(again) != string(cert) {
 		t.Fatal("certificate unnecessarily replaced")

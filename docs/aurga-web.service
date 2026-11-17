@@ -1,14 +1,17 @@
 [Unit]
-Description=AURGA LAN browser bridge (experimental)
+Description=AURGA LAN browser bridge
 Wants=network-online.target
 After=network-online.target
 
 [Service]
 Type=simple
-User=agent
-Group=agent
-WorkingDirectory=/workspace/deployments/aurga-web
-ExecStart=/workspace/deployments/aurga-web/aurga-web -listen 192.168.1.167:9443 -state-dir /workspace/deployments/aurga-web/state
+User=aurga
+Group=aurga
+Environment=AURGA_LISTEN=127.0.0.1:9443
+EnvironmentFile=-/etc/aurga-web.env
+ExecStart=/usr/local/bin/aurga-web -listen ${AURGA_LISTEN} -state-dir /var/lib/aurga-web
+StateDirectory=aurga-web
+StateDirectoryMode=0700
 Restart=on-failure
 RestartSec=5
 UMask=0077
@@ -16,7 +19,6 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/workspace/deployments/aurga-web/state
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

@@ -26,7 +26,7 @@ The passcode handshake uses a 16-byte random challenge, a zero-padded 16-byte pa
 
 The configuration API encrypts the variable-length passcode using a different challenge transform. A read-only `get device_info` request authenticated successfully on the real device; secret-bearing returned fields are never exposed by the web API or probe logs.
 
-The session uses queued management commands and input acknowledgements with bounded retries. Initial configuration disables audio and input, enables video and requests refresh. The web viewer enables input by default after operation-2 acknowledgement; diagnostic `?view=1` sessions disable it. Individual input ACKs pace browser reports. Physical keyboards use report 1; virtual text uses the vendor's atomic report 10 (9 bytes: ID, modifiers, reserved, key slots), matching `Java_com_qstec_shared_stream_StreamClient_sendCharInput`, `ascii2usbcode` and `InvisibleKeyboardView.sendExtensionKey`. Software taps are retained across focus transitions. Native Touch Events handle iPad touch; mouse/pen use Pointer Events. Blur/disconnect release uses a zero-motion relative mouse report to avoid moving the pointer to the origin. Release delivery after a broken network is best-effort; the implementation cannot guarantee remote input state after loss of communication.
+The session uses queued management commands and input acknowledgements with bounded retries. Session configuration activates streaming, applies the requested audio/input permissions, enables video and requests refresh. The web viewer enables input by default after operation-2 acknowledgement; diagnostic `?view=1` sessions disable it. Individual input ACKs pace browser reports. Physical keyboards use report 1; virtual text uses the vendor's atomic report 10 (9 bytes: ID, modifiers, reserved, key slots), matching `Java_com_qstec_shared_stream_StreamClient_sendCharInput`, `ascii2usbcode` and `InvisibleKeyboardView.sendExtensionKey`. Software taps are retained across focus transitions. Native Touch Events handle iPad touch; mouse/pen use Pointer Events. Blur/disconnect release uses a zero-motion relative mouse report to avoid moving the pointer to the origin. Release delivery after a broken network is best-effort; the implementation cannot guarantee remote input state after loss of communication.
 
 ## Audio and browser transport
 
@@ -36,16 +36,8 @@ WebSocket binary messages use a one-byte tag: 0 for Annex-B video, 1 for PCM. JS
 
 The browser logs in over POST /api/auth. A random device-bound token goes into a 24-hour HttpOnly Secure SameSite=Strict cookie; passcodes and sessions stay in bounded server memory. The default target is the first private-IPv4 LAN discovery response; ?ip=private-IPv4 overrides it. Public addresses, hostnames, loopback and IPv6 query overrides are rejected.
 
-## Real-device observations, 17 November 2026
+## Compatibility evidence
 
-- Device `192.168.1.94` reports `AURGA-4B57DC`, firmware `4.0.0.0`, protected.
-- UDP discovery and TCP 32465 read-only authentication succeed.
-- Both a connectivity probe and passcode handshake sent to UDP 36459 receive ICMP port-unreachable.
-- TCP 6851, which was open during the earlier investigation, is now closed. The cause is unknown. No reboot or configuration mutation was requested.
-- Later the device began reporting firmware `5.0.0.0`; TCP 6851/10000 and the UDP stream service responded again. No firmware update or reboot was initiated by this implementation.
-- Configuration and stream authentication then succeeded with the owner's passcode. The device's handshake reports HDMI state `0` and zero codec configuration bytes. No live video buffers have been received and no live HID input was sent.
-- The deployed HTTPS UI was tested in Chromium against this real device: authentication passed, read-only remained enabled, the passcode field cleared and normal disconnect passed. It showed `Connected — no HDMI signal`.
-- A separate full synthetic test passed through a real Go HTTPS/WebSocket server and loopback UDP peer: fragmented H.264 decoded to the browser canvas and keyboard/mouse/release reports reached the synthetic peer.
-- At 11:13 UTC the HDMI signal appeared: the handshake reported state `1` and 31 codec-configuration bytes. A six-second read-only probe received 266 video buffers. Chromium then rendered live 1920×1080 video, with 26 canvas draws over a three-second interval. No screen contents were saved, no real HID input was sent, and disconnect remained clean. This is initial live-video verification, not sustained-performance or live-input acceptance.
+Firmware 5.0.0.0 passed LAN discovery, read-only configuration authentication, stream authentication and initial 1920×1080 H.264 rendering in Chromium and WebKit. A no-HDMI handshake reports state 0 and no codec configuration; an active source reports state 1 with codec configuration. These observations do not establish sustained performance or compatibility with every firmware revision.
 
-Native function and structure evidence is retained locally under `/workspace/notes/projects/aurga/evidence/`. The initial report is `/workspace/notes/projects/aurga/README.md`.
+An all-keys-released report received a real-device input ACK. Synthetic tests verify keyboard, software-key taps, mouse and touch report delivery through the complete bridge. Physical iPad input and host-side effects need acceptance; audible output has not been verified. The project does not distribute host screen recordings, device identities, research binaries or decompiled listings.

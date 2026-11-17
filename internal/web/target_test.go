@@ -8,13 +8,13 @@ import (
 
 func TestTargetSelectionAndCookieBinding(t *testing.T) {
 	s := testServer()
-	for _, raw := range []string{"8.8.8.8", "127.0.0.1", "localhost", "::1", "0.0.0.0", "192.168.1.94:123"} {
+	for _, raw := range []string{"8.8.8.8", "127.0.0.1", "localhost", "::1", "0.0.0.0", "192.168.10.50:123"} {
 		r := httptest.NewRequest("GET", "https://localhost/?ip="+raw, nil)
 		if _, e := s.target(r); e == nil {
 			t.Fatalf("accepted target %q", raw)
 		}
 	}
-	r := httptest.NewRequest("POST", "https://localhost/api/auth?ip=192.168.1.94", strings.NewReader(`{"passcode":"test"}`))
+	r := httptest.NewRequest("POST", "https://localhost/api/auth?ip=192.168.10.50", strings.NewReader(`{"passcode":"test"}`))
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, r)
 	if w.Code != 204 {
@@ -24,7 +24,7 @@ func TestTargetSelectionAndCookieBinding(t *testing.T) {
 	for _, tc := range []struct {
 		ip   string
 		want int
-	}{{"192.168.1.94", 204}, {"192.168.1.95", 401}, {"8.8.8.8", 401}, {"", 401}} {
+	}{{"192.168.10.50", 204}, {"192.168.10.51", 401}, {"8.8.8.8", 401}, {"", 401}} {
 		q := ""
 		if tc.ip != "" {
 			q = "?ip=" + tc.ip
