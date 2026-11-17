@@ -33,14 +33,15 @@ type AudioStats struct {
 }
 
 type Event struct {
-	Audio      *AudioStats `json:"audio,omitempty"`
-	Input      *InputStats `json:"input,omitempty"`
-	Type       string      `json:"type"`
-	Message    string      `json:"message,omitempty"`
-	Codec      string      `json:"codec,omitempty"`
-	Data       []byte      `json:"-"`
-	Channels   int         `json:"channels,omitempty"`
-	SampleRate int         `json:"sampleRate,omitempty"`
+	Configuration bool        `json:"-"`
+	Audio         *AudioStats `json:"audio,omitempty"`
+	Input         *InputStats `json:"input,omitempty"`
+	Type          string      `json:"type"`
+	Message       string      `json:"message,omitempty"`
+	Codec         string      `json:"codec,omitempty"`
+	Data          []byte      `json:"-"`
+	Channels      int         `json:"channels,omitempty"`
+	SampleRate    int         `json:"sampleRate,omitempty"`
 }
 type Input struct {
 	Report  []byte
@@ -325,7 +326,7 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 					return errors.New("invalid codec configuration length")
 				}
 				if size > 0 {
-					emit(Event{Type: "nal", Data: append([]byte(nil), p.Data[8:8+size]...)})
+					emit(Event{Type: "nal", Configuration: true, Data: append([]byte(nil), p.Data[8:8+size]...)})
 				}
 				queue = append(queue, Packet{Version: 3, Type: 5, Sequence: next()})
 				emit(Event{Type: "status", Message: fmt.Sprintf("Stream authenticated (HDMI state %d, codec configuration %d bytes)", p.Data[6], size)})
@@ -405,7 +406,7 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 				if p.Index == 1 {
 					hdmi = true
 					emit(Event{Type: "status", Message: "Connected — waiting for HDMI video"})
-					emit(Event{Type: "nal", Data: p.Data})
+					emit(Event{Type: "nal", Configuration: true, Data: p.Data})
 				} else {
 					hdmi = false
 					emit(Event{Type: "status", Message: "Connected — no HDMI signal"})

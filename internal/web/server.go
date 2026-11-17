@@ -124,19 +124,20 @@ func (s *Server) permitAttempt(remote string) bool {
 }
 
 type browserDiagnostics struct {
-	Pointer        uint64 `json:"pointer"`
-	Touch          uint64 `json:"touch"`
-	Keyboard       uint64 `json:"keyboard"`
-	Text           uint64 `json:"text"`
-	Sent           uint64 `json:"sent"`
-	Acknowledged   uint64 `json:"acknowledged"`
-	Dropped        uint64 `json:"dropped"`
-	Queued         uint64 `json:"queued"`
-	Ready          bool   `json:"ready"`
-	ReadOnly       bool   `json:"readOnly"`
-	AudioPackets   uint64 `json:"audioPackets"`
-	AudioScheduled uint64 `json:"audioScheduled"`
-	AudioState     string `json:"audioState"`
+	Pointer         uint64 `json:"pointer"`
+	Touch           uint64 `json:"touch"`
+	Keyboard        uint64 `json:"keyboard"`
+	Text            uint64 `json:"text"`
+	Sent            uint64 `json:"sent"`
+	Acknowledged    uint64 `json:"acknowledged"`
+	Dropped         uint64 `json:"dropped"`
+	Queued          uint64 `json:"queued"`
+	Ready           bool   `json:"ready"`
+	ReadOnly        bool   `json:"readOnly"`
+	VideoRecoveries uint64 `json:"videoRecoveries"`
+	AudioPackets    uint64 `json:"audioPackets"`
+	AudioScheduled  uint64 `json:"audioScheduled"`
+	AudioState      string `json:"audioState"`
 }
 
 type command struct {
@@ -183,7 +184,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("aurga viewer opened: read_only=%t", first.ReadOnly)
 	defer log.Printf("aurga viewer closed")
-	events := make(chan aurga.Event, 32)
+	outgoing := newDelivery()
 	inputs := make(chan aurga.Input, 64)
 	result := make(chan error, 1)
 	done := make(chan struct{})
@@ -201,18 +202,25 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 				d := ev.Input
 				log.Printf("aurga device input: ready=%t received=%d sent=%d ack=%d retries=%d command_seq=%d relative=%d absolute=%d clicks=%d motion=%d", d.Ready, d.Received, d.Sent, d.Acknowledged, d.Retries, d.CommandSequence, d.Relative, d.Absolute, d.Clicks, d.Motion)
 			}
-			select {
-			case events <- ev:
-			case <-ctx.Done():
-			default:
-				if ev.Type != "pcm" {
-					log.Printf("aurga viewer stopped: event queue full, event=%s", ev.Type)
-					cancel()
-				}
+			if ctx.Err() != nil {
+				return
+			}
+			if !outgoing.offer(ev) {
+				log.Printf("aurga viewer stopped: reliable control queue full, event=%s", ev.Type)
+				cancel()
 			}
 		})
 		if err != nil && ctx.Err() == nil {
-			log.Printf("aurga viewer session failed: timeout=%t", strings.Contains(err.Error(), "timed out") || strings.Contains(err.Error(), "no response"))
+			kind := "protocol-or-network"
+			switch err.Error() {
+			case "stream command timed out":
+				kind = "command-timeout"
+			case "input acknowledgement timed out; control stopped":
+				kind = "input-ack-timeout"
+			case "no response from device stream service":
+				kind = "device-silent"
+			}
+			log.Printf("aurga viewer session failed: reason=%s", kind)
 		}
 		result <- err
 	}()
@@ -243,6 +251,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 					}
 					log.Printf("aurga browser audio: state=%s packets=%d scheduled=%d", state, d.AudioPackets, d.AudioScheduled)
 					log.Printf("aurga browser input: ready=%t read_only=%t pointer=%d touch=%d keyboard=%d text=%d sent=%d ack=%d dropped=%d queued=%d", d.Ready, d.ReadOnly, d.Pointer, d.Touch, d.Keyboard, d.Text, d.Sent, d.Acknowledged, d.Dropped, d.Queued)
+					log.Printf("aurga browser video: recoveries=%d", d.VideoRecoveries)
 				}
 				continue
 			case "control":
@@ -281,37 +290,45 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	for {
-		select {
-		case ev := <-events:
-			var message []byte
-			typ := websocket.MessageText
-			if ev.Type == "nal" || ev.Type == "pcm" {
-				typ = websocket.MessageBinary
-				if ev.Type == "pcm" {
-					message = append([]byte{1}, ev.Data...)
-				} else {
-					message = append([]byte{0}, ev.Data...)
+		ev, priority := outgoing.priority()
+		if !priority {
+			select {
+			case ev = <-outgoing.control:
+			case ev = <-outgoing.video:
+			case ev = <-outgoing.audio:
+			case err := <-result:
+				if err != nil && !errors.Is(err, context.Canceled) {
+					msg, _ := json.Marshal(aurga.Event{Type: "error", Message: err.Error()})
+					writeCtx, stop := context.WithTimeout(ctx, time.Second)
+					ws.Write(writeCtx, websocket.MessageText, msg)
+					stop()
 				}
-			} else {
-				message, _ = json.Marshal(ev)
-			}
-			writeCtx, stop := context.WithTimeout(ctx, 2*time.Second)
-			err := ws.Write(writeCtx, typ, message)
-			stop()
-			if err != nil {
-				log.Printf("aurga viewer write ended: close_status=%d cancelled=%t", websocket.CloseStatus(err), ctx.Err() != nil)
+				ws.Close(websocket.StatusNormalClosure, "Session ended")
+				return
+			case <-ctx.Done():
 				return
 			}
-		case err := <-result:
-			if err != nil && !errors.Is(err, context.Canceled) {
-				msg, _ := json.Marshal(aurga.Event{Type: "error", Message: err.Error()})
-				writeCtx, stop := context.WithTimeout(ctx, time.Second)
-				ws.Write(writeCtx, websocket.MessageText, msg)
-				stop()
+		}
+		if ev.Type == "video-reset" {
+			log.Printf("aurga viewer video resync: dropped_frames=%d dropped_audio=%d", outgoing.videoDrops.Load(), outgoing.audioDrops.Load())
+		}
+		var message []byte
+		typ := websocket.MessageText
+		if ev.Type == "nal" || ev.Type == "pcm" {
+			typ = websocket.MessageBinary
+			tag := byte(0)
+			if ev.Type == "pcm" {
+				tag = 1
 			}
-			ws.Close(websocket.StatusNormalClosure, "Session ended")
-			return
-		case <-ctx.Done():
+			message = append([]byte{tag}, ev.Data...)
+		} else {
+			message, _ = json.Marshal(ev)
+		}
+		writeCtx, stop := context.WithTimeout(ctx, 2*time.Second)
+		err := ws.Write(writeCtx, typ, message)
+		stop()
+		if err != nil {
+			log.Printf("aurga viewer write ended: close_status=%d cancelled=%t", websocket.CloseStatus(err), ctx.Err() != nil)
 			return
 		}
 	}
