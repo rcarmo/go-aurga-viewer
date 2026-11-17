@@ -2,6 +2,7 @@ package aurga
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -9,13 +10,33 @@ import (
 	"time"
 )
 
+// InputStats contains counts only: never HID payloads, keys or coordinates.
+type InputStats struct {
+	Received        uint64 `json:"received"`
+	Sent            uint64 `json:"sent"`
+	Acknowledged    uint64 `json:"acknowledged"`
+	Retries         uint64 `json:"retries"`
+	Ready           bool   `json:"ready"`
+	CommandSequence uint32 `json:"commandSequence"`
+}
+
+type AudioStats struct {
+	Channels   int    `json:"channels"`
+	SampleRate int    `json:"sampleRate"`
+	Packets    uint64 `json:"packets"`
+	Accepted   uint64 `json:"accepted"`
+	Bytes      uint64 `json:"bytes"`
+}
+
 type Event struct {
-	Type       string `json:"type"`
-	Message    string `json:"message,omitempty"`
-	Codec      string `json:"codec,omitempty"`
-	Data       []byte `json:"-"`
-	Channels   int    `json:"channels,omitempty"`
-	SampleRate int    `json:"sampleRate,omitempty"`
+	Audio      *AudioStats `json:"audio,omitempty"`
+	Input      *InputStats `json:"input,omitempty"`
+	Type       string      `json:"type"`
+	Message    string      `json:"message,omitempty"`
+	Codec      string      `json:"codec,omitempty"`
+	Data       []byte      `json:"-"`
+	Channels   int         `json:"channels,omitempty"`
+	SampleRate int         `json:"sampleRate,omitempty"`
 }
 type Input struct {
 	Report  []byte
@@ -44,7 +65,13 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 	stop := context.AfterFunc(ctx, func() { c.SetReadDeadline(time.Now()) })
 	defer stop()
 	c.SetReadBuffer(4 << 20)
-	seq := uint32(time.Now().UnixMilli())
+	// ASClientRestart seeds command_sent_no_ with rand() % 10000, not
+	// Unix milliseconds. Timestamp low bits can set the signed sequence bit.
+	var seed [4]byte
+	if _, e := rand.Read(seed[:]); e != nil {
+		return e
+	}
+	seq := le.Uint32(seed[:]) % 10000
 	next := func() uint32 { seq++; return seq }
 	handshake, e := Handshake(passcode, next())
 	if e != nil {
@@ -63,15 +90,32 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 	var audioSequence uint32
 	audioSeen := false
 	audioChannels := 0
+	var audioStats, previousAudioStats AudioStats
 	audioConfig := func(channels, rate int) {
 		if channels < 1 || channels > 8 || rate < 8000 || rate > 192000 {
 			audioChannels = 0
+			audioStats.Channels, audioStats.SampleRate = 0, 0
 			return
 		}
 		audioChannels = channels
+		audioStats.Channels, audioStats.SampleRate = channels, rate
 		emit(Event{Type: "audio", Channels: channels, SampleRate: rate})
 	}
 	inputReady := false
+	stats := InputStats{CommandSequence: seq}
+	var previousStats InputStats
+	var lastStats time.Time
+	publishStats := func() {
+		snapshot := stats
+		snapshot.Ready = inputReady
+		snapshot.CommandSequence = seq
+		previousStats = snapshot
+		lastStats = time.Now()
+		audioSnapshot := audioStats
+		previousAudioStats = audioSnapshot
+		emit(Event{Type: "input-status", Input: &snapshot, Audio: &audioSnapshot})
+	}
+	defer publishStats()
 	var inputSeq uint32
 	var pendingInput *Packet
 	var inputAt time.Time
@@ -110,6 +154,11 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 			return ctx.Err()
 		}
 		now := time.Now()
+		stats.Ready = inputReady
+		stats.CommandSequence = seq
+		if (stats != previousStats || audioStats != previousAudioStats) && now.Sub(lastStats) >= time.Second {
+			publishStats()
+		}
 		if len(queue) > 0 && (lastCommand.IsZero() || now.Sub(lastCommand) >= 500*time.Millisecond) {
 			if tries >= 6 {
 				return errors.New("stream command timed out")
@@ -144,8 +193,13 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 			if inputTries >= 10 {
 				return errors.New("input acknowledgement timed out; control stopped")
 			}
-			if err := send(*pendingInput); err != nil {
+			if err := send(inputTransmission(*pendingInput, inputTries)); err != nil {
 				return err
+			}
+			if inputTries == 0 {
+				stats.Sent++
+			} else {
+				stats.Retries++
 			}
 			inputTries++
 			inputAt = now
@@ -193,6 +247,7 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 				if len(inputQueue) >= 64 {
 					return errors.New("input queue full; control stopped")
 				}
+				stats.Received++
 				inputQueue = append(inputQueue, append([]byte(nil), in.Report...))
 			}
 		default:
@@ -219,6 +274,9 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 			}
 			if len(queue) > 0 && p.Type == queue[0].Type && p.Sequence == queue[0].Sequence {
 				acknowledged := queue[0]
+				if acknowledged.Type == 8 && len(acknowledged.Data) >= 2 {
+					emit(Event{Type: "management-ack", Message: fmt.Sprintf("operation=%d value=%d sequence=%d", acknowledged.Data[0], acknowledged.Data[1], acknowledged.Sequence)})
+				}
 				if acknowledged.Type == 8 && len(acknowledged.Data) > 1 && acknowledged.Data[0] == 2 {
 					inputReady = acknowledged.Data[1] != 0 && inputEnabled
 					emit(Event{Type: "control", Message: fmt.Sprintf("%t", inputReady)})
@@ -305,7 +363,10 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 					emit(Event{Type: "nal", Data: frame})
 				}
 			case 1:
+				audioStats.Packets++
+				audioStats.Bytes += uint64(len(p.Data))
 				if confirmed && s.Audio && audioChannels > 0 && len(p.Data) > 0 && len(p.Data) <= 16384 && len(p.Data)%(2*audioChannels) == 0 && (!audioSeen || int32(p.Sequence-audioSequence) > 0) {
+					audioStats.Accepted++
 					audioSeen = true
 					audioSequence = p.Sequence
 					emit(Event{Type: "pcm", Data: p.Data})
@@ -313,6 +374,7 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 			case 3:
 				if pendingInput != nil && p.Sequence == pendingInput.Sequence {
 					pendingInput = nil
+					stats.Acknowledged++
 					emit(Event{Type: "input-ack"})
 				}
 			case 6:
@@ -346,6 +408,20 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 		}
 	}
 }
+
+// SendThread sends plain first, then complements the payload and sets type bit
+// 7 on odd retransmissions for protocol v3. Never mutate the retained packet.
+func inputTransmission(p Packet, attempt int) Packet {
+	if attempt%2 == 1 {
+		p.Type |= 0x80
+		p.Data = append([]byte(nil), p.Data...)
+		for i := range p.Data {
+			p.Data[i] = ^p.Data[i]
+		}
+	}
+	return p
+}
+
 func ValidateReport(b []byte) error {
 	// Vendor sendCharInput uses report 10 for an atomic software-keyboard tap.
 	if len(b) == 9 && (b[0] == 1 || b[0] == 10) {

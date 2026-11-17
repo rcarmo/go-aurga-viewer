@@ -40,6 +40,12 @@ try {
  await page.keyboard.press('Backspace');await page.keyboard.press('Enter');
  // Safari can blur during keyboard transitions: committed software taps must survive.
  await page.locator('#mobile-input').dispatchEvent('blur');await drained();
+ await page.click('#info');await drained();
+ await page.waitForFunction(()=>deviceInput?.acknowledged===inputDiagnostics.acknowledged&&deviceInput.sent>0&&deviceInput.received===deviceInput.sent);
+ const diagnostic=await page.locator('#input-status').textContent();
+ if(!diagnostic?.includes('Counts only')||!diagnostic.includes('Input: enabled'))throw Error('Missing input counters');
+ const counts=await page.evaluate(()=>inputDiagnostics);
+ if(!counts.touch||!counts.keyboard||!counts.text||!counts.sent||!counts.acknowledged)throw Error('Browser event/report counts missing');
  await page.reload();await ready();
  if(await page.inputValue('#passcode'))throw Error('Credential retained in field');
  if(errors.length)throw Error(errors.join('; '));

@@ -28,7 +28,8 @@ TLS certificates persist in the user configuration directory under `aurga-web`, 
 
 ## Viewer
 
-- A passcode interstitial opens a video-only page with one small corner keyboard button.
+- A passcode interstitial opens a video page with small keyboard and input-diagnostics buttons.
+- The **i** button shows browser event/report counters, bridge sends/ACKs and audio format/packet/playback counters. Diagnostic logs contain counts and protocol operation numbers only, not keys, coordinates, PCM samples or passcodes.
 - Keyboard and mouse are enabled by default after the device acknowledges negotiation. **Use `?view=1` for a read-only session.**
 - Mouse buttons, wheel and direct-touch tap/drag use absolute coordinates. Native Touch Events handle iPad touch; Pointer Events handle mouse/pen.
 - The keyboard button opens a mobile text input from its touch gesture. Text uses the vendor's atomic software-keyboard report. ASCII, Enter and Backspace are supported with a US host keyboard layout; arbitrary Unicode is unsupported.

@@ -1,7 +1,9 @@
 package aurga
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"net"
 	"strings"
 	"testing"
@@ -23,6 +25,7 @@ func TestSessionSimulatedDevice(t *testing.T) {
 	go func() {
 		defer close(deviceDone)
 		buf := make([]byte, 65536)
+		firstInput := true
 		for {
 			server.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 			n, src, e := server.ReadFromUDP(buf)
@@ -39,6 +42,9 @@ func TestSessionSimulatedDevice(t *testing.T) {
 			for _, p := range packets {
 				switch p.Type {
 				case 4:
+					if p.Sequence == 0 || p.Sequence > 10000 {
+						t.Errorf("initial command sequence outside vendor range: %d", p.Sequence)
+					}
 					p.Data = make([]byte, 66)
 					server.WriteToUDP(p.Marshal(), src)
 				case 5:
@@ -51,6 +57,15 @@ func TestSessionSimulatedDevice(t *testing.T) {
 						server.WriteToUDP((Packet{Version: 3, Type: 2, Sequence: 1, Total: 1, Data: []byte{0, 0, 0, 1, 0x65, 1}}).Marshal(), src)
 					}
 				case 3:
+					if p.Sequence == 1 {
+						if firstInput {
+							firstInput = false
+							continue
+						} // Drop the first ACK.
+						if buf[5] != 0x83 {
+							t.Errorf("first retry must use vendor complement flag, got %x", buf[5])
+						}
+					}
 					select {
 					case gotInput <- p.Data:
 					default:
@@ -109,6 +124,16 @@ func TestSessionSimulatedDevice(t *testing.T) {
 		t.Fatal("session did not cancel")
 	}
 	<-deviceDone
+	var finalStats *InputStats
+	for len(events) > 0 {
+		ev := <-events
+		if ev.Input != nil {
+			finalStats = ev.Input
+		}
+	}
+	if finalStats == nil || finalStats.Received != 2 || finalStats.Sent != 2 || finalStats.Retries < 1 || finalStats.Acknowledged < 1 {
+		t.Fatalf("inaccurate input counters: %+v", finalStats)
+	}
 	close(gotInput)
 	relativeRelease := false
 	for b := range gotInput {
@@ -123,6 +148,30 @@ func TestSessionSimulatedDevice(t *testing.T) {
 		t.Fatal("missing zero-motion relative release")
 	}
 }
+func TestVendorInputTransmissionGolden(t *testing.T) {
+	p := Packet{Version: 3, Type: 3, Sequence: 1, Data: []byte{12, 0, 8, 1, 0, 0, 4, 0, 0, 0, 0, 0}}
+	// Native ASClientEnqueueInput + SendThread, independently transcribed bytes.
+	plain, _ := hex.DecodeString("52485641030300000000010000000c000c0008010000040000000000")
+	complemented, _ := hex.DecodeString("52485641038300000000010000000c00f3fff7fefffffbffffffffff")
+	for attempt := 0; attempt < 4; attempt++ {
+		want := plain
+		if attempt%2 == 1 {
+			want = complemented
+		}
+		wire := inputTransmission(p, attempt).Marshal()
+		if !bytes.Equal(wire, want) {
+			t.Fatalf("attempt %d: %x != %x", attempt, wire, want)
+		}
+		decoded, e := ParsePackets(wire)
+		if e != nil || len(decoded) != 1 || !bytes.Equal(decoded[0].Data, p.Data) {
+			t.Fatalf("retry did not decode to original report: %v", e)
+		}
+	}
+	if !bytes.Equal(p.Marshal(), plain) {
+		t.Fatal("retry mutated retained input packet")
+	}
+}
+
 func TestSessionRejectsPasscode(t *testing.T) {
 	server, e := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
 	if e != nil {
@@ -202,12 +251,16 @@ func TestAudioPCMConfigurationAndSequence(t *testing.T) {
 		}
 	}()
 	formats, frames := 0, 0
+	var finalAudio *AudioStats
 	err := (Session{IP: net.ParseIP("127.0.0.1"), Port: peer.LocalAddr().(*net.UDPAddr).Port, Audio: true}).Run(ctx, "test", nil, func(e Event) {
 		if e.Type == "audio" {
 			if e.Channels != 2 || e.SampleRate != 48000 {
 				t.Error(e)
 			}
 			formats++
+		}
+		if e.Audio != nil {
+			finalAudio = e.Audio
 		}
 		if e.Type == "pcm" {
 			frames++
@@ -221,6 +274,9 @@ func TestAudioPCMConfigurationAndSequence(t *testing.T) {
 	})
 	cancel()
 	<-done
+	if finalAudio == nil || finalAudio.Packets != 5 || finalAudio.Accepted != 3 || finalAudio.Bytes != 20 || finalAudio.SampleRate != 48000 || finalAudio.Channels != 2 {
+		t.Fatalf("inaccurate audio counters: %+v", finalAudio)
+	}
 	if formats != 1 || frames != 3 {
 		t.Fatalf("formats=%d frames=%d error=%v", formats, frames, err)
 	}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"github.com/coder/websocket"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -122,11 +123,28 @@ func (s *Server) permitAttempt(remote string) bool {
 	return true
 }
 
+type browserDiagnostics struct {
+	Pointer        uint64 `json:"pointer"`
+	Touch          uint64 `json:"touch"`
+	Keyboard       uint64 `json:"keyboard"`
+	Text           uint64 `json:"text"`
+	Sent           uint64 `json:"sent"`
+	Acknowledged   uint64 `json:"acknowledged"`
+	Dropped        uint64 `json:"dropped"`
+	Queued         uint64 `json:"queued"`
+	Ready          bool   `json:"ready"`
+	ReadOnly       bool   `json:"readOnly"`
+	AudioPackets   uint64 `json:"audioPackets"`
+	AudioScheduled uint64 `json:"audioScheduled"`
+	AudioState     string `json:"audioState"`
+}
+
 type command struct {
-	Type     string `json:"type"`
-	ReadOnly bool   `json:"readOnly,omitempty"`
-	Enabled  bool   `json:"enabled,omitempty"`
-	Report   []byte `json:"report,omitempty"`
+	Diagnostics *browserDiagnostics `json:"diagnostics,omitempty"`
+	Type        string              `json:"type"`
+	ReadOnly    bool                `json:"readOnly,omitempty"`
+	Enabled     bool                `json:"enabled,omitempty"`
+	Report      []byte              `json:"report,omitempty"`
 }
 
 func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
@@ -170,6 +188,17 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer close(done)
 		err := (aurga.Session{IP: deviceIP, Port: s.cfg.StreamPort, InitialInput: !first.ReadOnly, Audio: true}).Run(ctx, passcode, inputs, func(ev aurga.Event) {
+			if ev.Type == "management-ack" {
+				log.Printf("aurga management ack: %s", ev.Message)
+			}
+			if ev.Audio != nil {
+				a := ev.Audio
+				log.Printf("aurga device audio: channels=%d rate=%d packets=%d accepted=%d bytes=%d", a.Channels, a.SampleRate, a.Packets, a.Accepted, a.Bytes)
+			}
+			if ev.Input != nil {
+				d := ev.Input
+				log.Printf("aurga device input: ready=%t received=%d sent=%d ack=%d retries=%d command_seq=%d", d.Ready, d.Received, d.Sent, d.Acknowledged, d.Retries, d.CommandSequence)
+			}
 			select {
 			case events <- ev:
 			case <-ctx.Done():
@@ -183,6 +212,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	}()
 	go func() {
 		defer cancel()
+		var lastDiagnostics time.Time
 		for {
 			typ, data, e := ws.Read(ctx)
 			if e != nil {
@@ -194,6 +224,19 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 			}
 			var in aurga.Input
 			switch cmd.Type {
+			case "diagnostics":
+				if cmd.Diagnostics != nil && time.Since(lastDiagnostics) >= time.Second {
+					lastDiagnostics = time.Now()
+					d := cmd.Diagnostics
+					// Do not log arbitrary client strings: audio state is an allowlist.
+					state := d.AudioState
+					if state != "running" && state != "suspended" && state != "closed" && state != "not-started" {
+						state = "unknown"
+					}
+					log.Printf("aurga browser audio: state=%s packets=%d scheduled=%d", state, d.AudioPackets, d.AudioScheduled)
+					log.Printf("aurga browser input: ready=%t read_only=%t pointer=%d touch=%d keyboard=%d text=%d sent=%d ack=%d dropped=%d queued=%d", d.Ready, d.ReadOnly, d.Pointer, d.Touch, d.Keyboard, d.Text, d.Sent, d.Acknowledged, d.Dropped, d.Queued)
+				}
+				continue
 			case "control":
 				b := cmd.Enabled
 				in.Enable = &b
