@@ -1,3 +1,5 @@
+.DEFAULT_GOAL := build
+
 PROJECT := aurga-web
 INHERITED_TMPDIR := $(TMPDIR)
 CI_ACTIVE := $(filter-out 0 false,$(strip $(CI)))
@@ -19,7 +21,7 @@ export BUN_INSTALL_CACHE_DIR := $(WORK)/cache/bun
 ifneq ($(wildcard /workspace/bin/pw-browsers),)
 export PLAYWRIGHT_BROWSERS_PATH ?= /workspace/bin/pw-browsers
 endif
-.PHONY: dirs deps install verify-modules build print-binary probe dist test browser-test browser-e2e race lint fmt check clean
+.PHONY: dirs deps install verify-modules build run print-binary probe dist test browser-test browser-e2e race lint fmt check clean
 dirs:
 	@mkdir -p $(TMPDIR) $(GOCACHE) $(GOMODCACHE) $(GOTMPDIR) $(WORK)/tests $(WORK)/logs
 deps: dirs
@@ -29,6 +31,8 @@ verify-modules: dirs
 	go mod verify
 build: dirs
 	go build -trimpath -o $(WORK)/build/aurga-web ./cmd/aurga-web
+run: build
+	@"$(WORK)/build/aurga-web" $(ARGS)
 probe: dirs
 	go run ./cmd/probe -device "$(DEVICE)" $(PROBE_FLAGS)
 print-binary:

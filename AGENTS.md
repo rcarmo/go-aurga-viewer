@@ -12,6 +12,8 @@ The Go binary embeds a LAN browser viewer. The default target is the first priva
 
 ## Verification
 
+`make` builds the binary; `make run` builds and starts it. Pass runtime flags with `make run ARGS="..."`. Existing explicit build/test targets and `print-binary` remain available.
+
 Use `make check`, `make verify-modules` and `make race`. UI/input changes also require `make browser-e2e` and `AURGA_BROWSER=webkit make browser-e2e`. Browser E2E uses a loopback synthetic peer, not a live KVM. WebKit's native tap/focus is tested; DOM drag/wheel tests do not establish physical iPad acceptance. Software-keyboard taps use vendor report 10; physical held-state uses report 1. Distinguish implemented, synthetic-tested and live-accepted behaviour.
 
 Ordinary tests do not collect profiles. Measure representative workloads during performance work, retain concise findings and remove owned raw profiling captures after analysis.
