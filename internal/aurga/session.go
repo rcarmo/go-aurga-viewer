@@ -347,7 +347,8 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 	}
 }
 func ValidateReport(b []byte) error {
-	if len(b) == 9 && b[0] == 1 {
+	// Vendor sendCharInput uses report 10 for an atomic software-keyboard tap.
+	if len(b) == 9 && (b[0] == 1 || b[0] == 10) {
 		return nil
 	}
 	if len(b) == 7 && b[0] == 4 && b[1]&^byte(7) == 0 && binary.LittleEndian.Uint16(b[2:]) <= 32767 && binary.LittleEndian.Uint16(b[4:]) <= 32767 {

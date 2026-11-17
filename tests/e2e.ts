@@ -1,11 +1,48 @@
-import { chromium } from 'playwright';
-const browser=await chromium.launch({headless:true});
-try{const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:390,height:844},hasTouch:true,isMobile:true});const page=await context.newPage();const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
-await page.goto(process.env.AURGA_TEST_URL!);await page.waitForSelector('#gate[open]');await page.fill('#passcode','test');await page.click('#connect');
-async function ready(){await page.waitForFunction(()=>document.querySelector('#placeholder')?.hidden===true&&controlling,{},{timeout:10000});}
-await ready();if(await page.locator('#gate').evaluate(e=>e.open))throw Error('Interstitial still visible');if(await page.locator('header,.tools,.note').count())throw Error('Page chrome remains');
-const cookies=await context.cookies();if(!cookies.some(c=>c.name==='aurga_session'&&c.httpOnly&&c.secure&&c.sameSite==='Strict'))throw Error('Secure session cookie missing');
-await page.focus('#screen');await page.keyboard.press('a');await page.waitForTimeout(150);const rect=await page.locator('canvas').boundingBox();if(!rect)throw Error('No canvas');await page.mouse.click(rect.x+rect.width/2,rect.y+rect.height/2);await page.waitForTimeout(150);
-await page.mouse.click(rect.x+rect.width/2,rect.y+rect.height/2,{button:'right'});await page.mouse.wheel(0,100);await page.waitForFunction(()=>reportQueue.length===0&&!inputPending);await page.touchscreen.tap(rect.x+rect.width*.7,rect.y+rect.height*.6);await page.waitForFunction(()=>reportQueue.length===0&&!inputPending);const cdp=await context.newCDPSession(page);await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:rect.x+rect.width*.2,y:rect.y+rect.height*.3}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:rect.x+rect.width*.4,y:rect.y+rect.height*.5}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForFunction(()=>reportQueue.length===0&&!inputPending);await page.click('#keyboard');await page.fill('#mobile-input','Hi!');await page.keyboard.press('Backspace');await page.keyboard.press('Enter');await page.waitForFunction(()=>reportQueue.length===0&&!inputPending);await page.reload();await ready();if(await page.inputValue('#passcode'))throw Error('Credential retained in field');if(errors.length)throw Error(errors.join('; '));
-console.log('PASS: passcode interstitial, secure memory-session cookie/reload, video-only UI, default input, acknowledged keyboard, mouse buttons/wheel, touch tap/drag/release and mobile typing through real Go/UDP bridge');await context.close();
+import { chromium, webkit } from 'playwright';
+const engine=process.env.AURGA_BROWSER==='webkit'?'webkit':'chromium';
+const browser=await (engine==='webkit'?webkit:chromium).launch({headless:true});
+try {
+ const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1024,height:768},hasTouch:true,isMobile:true});
+ const page=await context.newPage(),errors:string[]=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(process.env.AURGA_TEST_URL!);
+ await page.waitForSelector('#gate[open]');
+ await page.fill('#passcode','test');await page.click('#connect');
+ async function ready(){await page.waitForFunction(()=>document.querySelector('#placeholder')?.hidden===true&&controlling,{},{timeout:10000});}
+ async function drained(){await page.waitForFunction(()=>reportQueue.length===0&&!inputPending);}
+ await ready();
+ if(await page.locator('#gate').evaluate(e=>e.open))throw Error('Interstitial still visible');
+ if(await page.locator('header,.tools,.note').count())throw Error('Page chrome remains');
+ const cookies=await context.cookies();
+ if(!cookies.some(c=>c.name==='aurga_session'&&c.httpOnly&&c.secure&&c.sameSite==='Strict'))throw Error('Secure cookie missing');
+ await page.focus('#screen');await page.keyboard.press('a');await drained();
+ const rect=await page.locator('canvas').boundingBox();if(!rect)throw Error('No canvas');
+ await page.mouse.click(rect.x+rect.width/2,rect.y+rect.height/2);await drained();
+ await page.mouse.click(rect.x+rect.width/2,rect.y+rect.height/2,{button:'right'});
+ if(engine==='chromium')await page.mouse.wheel(0,100);else await page.evaluate(({x,y})=>document.querySelector('#screen').dispatchEvent(new WheelEvent('wheel',{deltaY:100,clientX:x,clientY:y,bubbles:true,cancelable:true})),{x:rect.x+rect.width/2,y:rect.y+rect.height/2});await drained();
+ // Real browser touch gesture; verifies the Touch Events path without Pointer Events duplication.
+ await page.touchscreen.tap(rect.x+rect.width*.7,rect.y+rect.height*.6);await drained();
+ if(engine==='chromium'){
+  const cdp=await context.newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:rect.x+rect.width*.2,y:rect.y+rect.height*.3}]});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:rect.x+rect.width*.4,y:rect.y+rect.height*.5}]});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ }else{
+  // WebKit exposes only a native tap in Playwright. Exercise drag handler with
+  // DOM events; this does not assert physical iPad drag/keyboard acceptance.
+  await page.evaluate(({x,y,w,h})=>{const target=document.querySelector('#screen');for(const [type,fx,fy] of [['touchstart',.2,.3],['touchmove',.4,.5],['touchend',.4,.5]]){const event=new Event(type,{bubbles:true,cancelable:true});Object.defineProperty(event,'changedTouches',{value:[{identifier:17,clientX:x+w*fx,clientY:y+h*fy}]});target.dispatchEvent(event);}}, {x:rect.x,y:rect.y,w:rect.width,h:rect.height});
+ }
+ await drained();
+ const button=await page.locator('#keyboard').boundingBox();if(!button)throw Error('No keyboard button');
+ await page.touchscreen.tap(button.x+button.width/2,button.y+button.height/2);
+ if(!(await page.locator('#mobile-input').evaluate(e=>document.activeElement===e)))throw Error('Touch gesture did not focus mobile input');
+ await page.evaluate(()=>document.querySelector('#mobile-input').dispatchEvent(new InputEvent('beforeinput',{inputType:'insertText',data:'Hi!',bubbles:true,cancelable:true})));
+ await page.keyboard.press('Backspace');await page.keyboard.press('Enter');
+ // Safari can blur during keyboard transitions: committed software taps must survive.
+ await page.locator('#mobile-input').dispatchEvent('blur');await drained();
+ await page.reload();await ready();
+ if(await page.inputValue('#passcode'))throw Error('Credential retained in field');
+ if(errors.length)throw Error(errors.join('; '));
+ console.log(`PASS (${engine}): real HTTPS/UDP bridge, native touch tap, drag handler/release, touch keyboard focus, atomic software-key taps, Enter/Backspace, blur queue preservation and cookie reload`);
+ await context.close();
 }finally{await browser.close();}

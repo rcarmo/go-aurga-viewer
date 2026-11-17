@@ -93,6 +93,15 @@ func TestSessionSimulatedDevice(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("no input")
 	}
+	inputs <- Input{Report: []byte{10, 2, 0, 11, 0, 0, 0, 0, 0}}
+	select {
+	case b := <-gotInput:
+		if len(b) != 12 || b[2] != 8 || b[3] != 10 || b[4] != 2 || b[6] != 11 {
+			t.Fatalf("bad vendor software-keyboard framing %v", b)
+		}
+	case <-ctx.Done():
+		t.Fatal("no software key tap")
+	}
 	cancel()
 	select {
 	case <-result:

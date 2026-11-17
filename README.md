@@ -28,8 +28,8 @@ Use a current Chrome or Edge browser first. H.264 decoding depends on browser/OS
 ## Controls and credentials
 
 - A passcode interstitial opens the video-only page. Keyboard and mouse are enabled by default after the device acknowledges input negotiation.
-- Mouse buttons, wheel, direct-touch tap-to-click and touch dragging use absolute coordinates with release on pointer-up/cancel. These paths pass the synthetic browser→UDP test; actual host effects need confirmation.
-- The small corner keyboard button focuses a mobile text input. Mobile typing supports ASCII and a US host keyboard layout, including Enter and Backspace; arbitrary Unicode is unsupported.
+- Mouse buttons, wheel, direct-touch tap-to-click and touch dragging use absolute coordinates with release on pointer-up/cancel. Touch uses native Touch Events on iPad, with Pointer Events for mouse/pen. Chromium and WebKit browser→UDP tests pass; actual iPad host effects need confirmation.
+- The small corner keyboard button focuses a mobile text input directly from its touch gesture. Text uses the vendor's atomic software-keyboard report (ID 10), and committed taps survive keyboard-focus transitions. Mobile typing supports ASCII and a US host keyboard layout, including Enter and Backspace; arbitrary Unicode is unsupported.
 - `?view=1` explicitly opens a read-only viewer for safe diagnostics.
 - Reports are paced by device acknowledgements, with bounded queues. Browser focus, negotiation and report delivery are tested end to end.
 - Blur, hidden tabs and normal disconnect send release reports. Network loss can prevent release delivery; use the official app to clear stuck input if that occurs.
@@ -44,7 +44,8 @@ Use a current Chrome or Edge browser first. H.264 decoding depends on browser/OS
 make check             # native tests, go vet, binary build
 make race              # tests under the race detector
 make browser-test      # optional: Bun, Playwright and ffmpeg development tools
-make browser-e2e       # full Go bridge + loopback synthetic UDP peer + real browser
+make browser-e2e       # Chromium + real Go bridge + loopback UDP peer
+AURGA_BROWSER=webkit make browser-e2e # WebKit native touch tap/focus; DOM drag/wheel handler tests
 ```
 
 `make browser-test` serves a loopback HTTP test instance, intercepts its WebSocket with a synthetic peer, generates a blue H.264 frame, verifies real browser decoding/rendering, then tests default input, acknowledged mobile typing and synthetic PCM playback. It does not connect to the real device. Install optional browser test dependencies with `bun install`; install Chromium using Playwright if no matching browser is available. Shared workspace browsers are used automatically when present.

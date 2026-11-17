@@ -101,8 +101,13 @@ func TestBrowserEndToEnd(t *testing.T) {
 	touch, drag, mouseRelease := false, false, false
 	right, wheel := false, false
 	backspace, enter := false, false
+	softwareTap := false
+	touchPresses := 0
 	for report := range received {
-		if len(report) == 12 && report[3] == 1 {
+		if len(report) == 12 && (report[3] == 1 || report[3] == 10) {
+			if report[3] == 10 && report[4] == 2 && report[6] == 11 {
+				softwareTap = true
+			}
 			if report[6] == 42 {
 				backspace = true
 			}
@@ -129,6 +134,7 @@ func TestBrowserEndToEnd(t *testing.T) {
 				mouse = true
 				if x > 22500 && x < 23400 && y > 19000 && y < 20400 {
 					touch = true
+					touchPresses++
 				}
 			}
 			if report[4] == 0 {
@@ -139,7 +145,7 @@ func TestBrowserEndToEnd(t *testing.T) {
 			}
 		}
 	}
-	if !key || !mouse || !release || !touch || !drag || !mouseRelease || !right || !wheel || !backspace || !enter {
-		t.Fatalf("missing HID: key=%t mouse=%t release=%t touch=%t drag=%t mouseRelease=%t right=%t wheel=%t backspace=%t enter=%t", key, mouse, release, touch, drag, mouseRelease, right, wheel, backspace, enter)
+	if !key || !mouse || !release || !touch || !drag || !mouseRelease || !right || !wheel || !backspace || !enter || !softwareTap || touchPresses != 1 {
+		t.Fatalf("missing HID: key=%t mouse=%t release=%t touch=%t drag=%t mouseRelease=%t right=%t wheel=%t backspace=%t enter=%t softwareTap=%t touchPresses=%d", key, mouse, release, touch, drag, mouseRelease, right, wheel, backspace, enter, softwareTap, touchPresses)
 	}
 }
