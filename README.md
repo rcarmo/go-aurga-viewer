@@ -31,14 +31,14 @@ TLS certificates persist in the user configuration directory under `aurga-web`, 
 - A passcode interstitial opens a video page with small keyboard and input-diagnostics buttons.
 - The **i** button shows browser event/report counters, bridge sends/ACKs and audio format/packet/playback counters. Diagnostic logs contain counts and protocol operation numbers only, not keys, coordinates, PCM samples or passcodes.
 - Keyboard and mouse are enabled by default after the device acknowledges negotiation. **Use `?view=1` for a read-only session.**
-- Mouse buttons and wheel use relative HID reports by default for host compatibility. Touch acts as a trackpad: swipe to move the cursor, tap to click at its current position, or hold for half a second then move to drag. Native Touch Events handle iPad touch; Pointer Events handle mouse/pen. `?mouse=absolute` restores direct-coordinate mouse/touch input on hosts that support it.
+- Mouse buttons and wheel use relative HID reports by default for host compatibility. Touch acts as a trackpad: swipe to move the cursor, tap to click at its current position, or hold for half a second then move to drag. Native Touch Events handle iPad touch; Pointer Events handle mouse/pen. `?mouse=absolute` restores direct-coordinate mouse/touch input on hosts that support it. Clicking captures the mouse where Pointer Lock is supported; Esc releases it. Other browsers use bounded edge panning when the mouse dwells at the video boundary. Large relative movements are split across reports rather than clipped.
 - The keyboard button opens a mobile text input from its touch gesture. Text uses the vendor's atomic software-keyboard report. ASCII, Enter and Backspace are supported with a US host keyboard layout; arbitrary Unicode is unsupported.
 - Reports are paced by device acknowledgements and bounded queues. Audio/video have separate lossy queues, so media pressure cannot fill the control/ACK queue. Stale video is dropped and a keyframe requested without reconnecting; genuine transport/input timeouts still stop the session. Blur and normal disconnect send release reports. A broken network can prevent remote release; use the official app if input becomes stuck.
 - One viewer is admitted at a time. Concurrent use with the official app is untested.
 
 Current Chromium browsers are the primary target. WebKit tests cover video, native touch tap and keyboard focus; their drag/wheel cases dispatch DOM events and do not establish physical iPad acceptance. H.264/HEVC availability depends on the browser and operating system.
 
-Audio is experimental PCM16 playback through Web Audio. Autoplay rules require a tap after cookie auto-login; the keyboard button also enables audio. The tested live source did not advertise an audio format. A/V synchronisation is not guaranteed.
+Audio is experimental PCM16 playback through Web Audio. Safari interruptions retain the stream format: returning to the page attempts resume, and the next touch/click/key gesture rebuilds a context that remains interrupted. A playback AudioSession is requested where supported; operating-system interruptions may still pause output. Autoplay rules require a tap after cookie auto-login; the keyboard button also enables audio. The tested live source did not advertise an audio format. A/V synchronisation is not guaranteed.
 
 ## Authentication and security
 

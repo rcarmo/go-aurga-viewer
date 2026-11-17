@@ -58,6 +58,7 @@ try {
  await page.mouse.move(x+60,y+20);await drained();
  await page.mouse.move(x-60,y-20);await drained();
  await page.mouse.down();await drained();await page.mouse.move(x,y);await drained();await page.mouse.up();await drained();
+ await page.evaluate(()=>document.exitPointerLock?.());await page.waitForFunction(()=>!document.pointerLockElement);await drained();
  await page.touchscreen.tap(x,y);await drained();
  const touchEvent=async(type:string,dx=0)=>{await page.evaluate(({type,x,y})=>{const e=new Event(type,{bubbles:true,cancelable:true});Object.defineProperty(e,'changedTouches',{value:[{identifier:71,clientX:x,clientY:y}]});document.querySelector('#screen').dispatchEvent(e);},{type,x:x+dx,y});};
  await touchEvent('touchstart');await page.waitForTimeout(550);await drained();await touchEvent('touchmove',45);await drained();await touchEvent('touchend',45);await drained();

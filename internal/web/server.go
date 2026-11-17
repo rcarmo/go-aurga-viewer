@@ -137,6 +137,7 @@ type browserDiagnostics struct {
 	VideoRecoveries uint64 `json:"videoRecoveries"`
 	AudioPackets    uint64 `json:"audioPackets"`
 	AudioScheduled  uint64 `json:"audioScheduled"`
+	AudioRecoveries uint64 `json:"audioRecoveries"`
 	AudioState      string `json:"audioState"`
 }
 
@@ -246,10 +247,10 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 					d := cmd.Diagnostics
 					// Do not log arbitrary client strings: audio state is an allowlist.
 					state := d.AudioState
-					if state != "running" && state != "suspended" && state != "closed" && state != "not-started" {
+					if state != "running" && state != "suspended" && state != "closed" && state != "not-started" && state != "interrupted" {
 						state = "unknown"
 					}
-					log.Printf("aurga browser audio: state=%s packets=%d scheduled=%d", state, d.AudioPackets, d.AudioScheduled)
+					log.Printf("aurga browser audio: state=%s packets=%d scheduled=%d recoveries=%d", state, d.AudioPackets, d.AudioScheduled, d.AudioRecoveries)
 					log.Printf("aurga browser input: ready=%t read_only=%t pointer=%d touch=%d keyboard=%d text=%d sent=%d ack=%d dropped=%d queued=%d", d.Ready, d.ReadOnly, d.Pointer, d.Touch, d.Keyboard, d.Text, d.Sent, d.Acknowledged, d.Dropped, d.Queued)
 					log.Printf("aurga browser video: recoveries=%d", d.VideoRecoveries)
 				}
