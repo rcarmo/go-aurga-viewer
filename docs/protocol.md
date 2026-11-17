@@ -26,7 +26,15 @@ The passcode handshake uses a 16-byte random challenge, a zero-padded 16-byte pa
 
 The configuration API encrypts the variable-length passcode using a different challenge transform. A read-only `get device_info` request authenticated successfully on the real device; secret-bearing returned fields are never exposed by the web API or probe logs.
 
-The session uses queued management commands and input acknowledgements with bounded retries. Initial configuration disables audio and input, enables video and requests refresh. Browser control is opt-in. Release delivery after a broken network is best-effort; the implementation cannot guarantee remote input state after loss of communication.
+The session uses queued management commands and input acknowledgements with bounded retries. Initial configuration disables audio and input, enables video and requests refresh. The web viewer enables input by default after operation-2 acknowledgement; diagnostic `?view=1` sessions disable it. Individual input ACKs pace browser reports. Blur/disconnect release uses a zero-motion relative mouse report to avoid moving the pointer to the origin. Release delivery after a broken network is best-effort; the implementation cannot guarantee remote input state after loss of communication.
+
+## Audio and browser transport
+
+Audio type 1 contains PCM signed 16-bit little-endian samples. The native `RecvThread` passes each newer packet directly to `ASAudioPlayerFeed`; no video fragment assembly or ACK is used. Handshake offsets 2/3/4 contain audio state, channel count and uint16 sample rate. Type 21 supplies uint32 channels/rate at offsets 0/4 and receives an empty ACK. Operation 1 enables audio. Channel/rate/payload bounds and sequence checks reject malformed or stale PCM.
+
+WebSocket binary messages use a one-byte tag: 0 for Annex-B video, 1 for PCM. JSON audio events supply channels/sampleRate. Web Audio buffers perform PCM conversion and sample-rate conversion; queued playback is bounded to 250 ms. Synthetic audio configuration, duplicate rejection and browser scheduling pass. The tested live source has not advertised audio, so audible output is unverified.
+
+The browser logs in over POST /api/auth. A random device-bound token goes into a 24-hour HttpOnly Secure SameSite=Strict cookie; passcodes and sessions stay in bounded server memory. The default target is the first private-IPv4 LAN discovery response; ?ip=private-IPv4 overrides it. Public addresses, hostnames, loopback and IPv6 query overrides are rejected.
 
 ## Real-device observations, 17 November 2026
 

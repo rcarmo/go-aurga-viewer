@@ -19,14 +19,14 @@ import (
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:9443", "HTTPS listen address (one explicit IP)")
-	device := flag.String("device", "192.168.1.94", "fixed device IPv4 address")
+	device := flag.String("device", "", "optional default private device IPv4; otherwise discover first LAN device")
 	streamPort := flag.Int("stream-port", 0, "override the protocol UDP stream port")
 	state := flag.String("state-dir", "", "persistent TLS certificate directory")
 	plain := flag.Bool("http", false, "HTTP for loopback testing only")
 	flag.Parse()
 	ip := net.ParseIP(*device)
-	if ip == nil || ip.To4() == nil || !ip.IsPrivate() {
-		log.Fatal("device must be an explicit private IPv4 address")
+	if *device != "" && (ip == nil || ip.To4() == nil || !ip.IsPrivate()) {
+		log.Fatal("device override must be a private IPv4 address")
 	}
 	host, _, err := net.SplitHostPort(*listen)
 	if err != nil {
@@ -63,7 +63,11 @@ func main() {
 	if *plain {
 		scheme = "http"
 	}
-	fmt.Printf("AURGA viewer: %s://%s/\nDevice: %s (control disabled until explicitly enabled)\n", scheme, *listen, ip)
+	target := "first discovered LAN device"
+	if ip != nil {
+		target = ip.String()
+	}
+	fmt.Printf("AURGA viewer: %s://%s/\nDevice: %s (input enabled by default)\n", scheme, *listen, target)
 	if *plain {
 		err = server.ListenAndServe()
 	} else {

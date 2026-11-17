@@ -93,8 +93,17 @@ func TestBrowserEndToEnd(t *testing.T) {
 	<-peerDone
 	close(received)
 	key, mouse, release := false, false, false
+	touch, drag, mouseRelease := false, false, false
+	right, wheel := false, false
+	backspace, enter := false, false
 	for report := range received {
 		if len(report) == 12 && report[3] == 1 {
+			if report[6] == 42 {
+				backspace = true
+			}
+			if report[6] == 40 {
+				enter = true
+			}
 			if report[6] == 4 {
 				key = true
 			}
@@ -102,11 +111,30 @@ func TestBrowserEndToEnd(t *testing.T) {
 				release = true
 			}
 		}
-		if len(report) == 10 && report[3] == 4 && report[4] == 1 {
-			mouse = true
+		if len(report) == 10 && report[3] == 4 {
+			if report[4] == 2 {
+				right = true
+			}
+			if report[9] == 255 {
+				wheel = true
+			}
+			x := int(report[5]) | int(report[6])<<8
+			y := int(report[7]) | int(report[8])<<8
+			if report[4] == 1 {
+				mouse = true
+				if x > 22500 && x < 23400 && y > 19000 && y < 20400 {
+					touch = true
+				}
+			}
+			if report[4] == 0 {
+				mouseRelease = true
+				if x > 12500 && x < 13700 && y > 15700 && y < 17000 {
+					drag = true
+				}
+			}
 		}
 	}
-	if !key || !mouse || !release {
-		t.Fatalf("missing peer HID reports: key=%t mouse=%t release=%t", key, mouse, release)
+	if !key || !mouse || !release || !touch || !drag || !mouseRelease || !right || !wheel || !backspace || !enter {
+		t.Fatalf("missing HID: key=%t mouse=%t release=%t touch=%t drag=%t mouseRelease=%t right=%t wheel=%t backspace=%t enter=%t", key, mouse, release, touch, drag, mouseRelease, right, wheel, backspace, enter)
 	}
 }

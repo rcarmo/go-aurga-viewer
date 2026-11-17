@@ -30,6 +30,10 @@ func ParseDiscovery(data []byte) (Device, error) {
 	return Device{Name: m["mds"], ID: m["id"], IP: m["ip"], Firmware: m["version"], Secured: m["secured"] == "1"}, nil
 }
 func Discover(ctx context.Context, ip net.IP) (Device, error) {
+	broadcast := ip == nil
+	if broadcast {
+		ip = net.IPv4bcast
+	}
 	c, e := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero})
 	if e != nil {
 		return Device{}, e
@@ -53,14 +57,14 @@ func Discover(ctx context.Context, ip net.IP) (Device, error) {
 		if e != nil {
 			return Device{}, e
 		}
-		if !src.IP.Equal(ip) || src.Port != DiscoveryPort {
+		if src.Port != DiscoveryPort || (!broadcast && !src.IP.Equal(ip)) || (broadcast && (src.IP.To4() == nil || !src.IP.IsPrivate())) {
 			continue
 		}
 		d, e := ParseDiscovery(buf[:n])
 		if e != nil {
 			continue
 		}
-		d.IP = ip.String()
+		d.IP = src.IP.String()
 		return d, nil
 	}
 }

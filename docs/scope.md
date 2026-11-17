@@ -2,7 +2,11 @@
 
 Rui requested a simple browser replacement for frequent access to the LAN AURGA KVM, preferably in Go. The first build targets one user, one configured device and a current desktop Chromium browser.
 
-## Refinement decisions
+## Current UI revision (17 November 2026)
+
+Rui requested a video-only page after a passcode interstitial, input enabled by default, one corner button for mobile typing, and memory-only cookie authentication. These requirements supersede the original read-only UI and audio exclusion below. The implementation also attempts PCM audio playback; audible output needs live confirmation. Real-device input negotiation and a neutral keyboard report ACK pass; host typing/clicking effects require Rui's confirmation. The default target is the first LAN discovery reply; ?ip=private-IPv4 selects another device with separately bound authentication. Desktop buttons/wheel and touch tap/drag/release are tested against a synthetic peer.
+
+## Initial refinement decisions
 
 1. Problem: vendor app makes frequent KVM access inconvenient.
 2. User: Rui, on the existing trusted LAN.

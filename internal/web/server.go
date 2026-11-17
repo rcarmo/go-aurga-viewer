@@ -3,7 +3,6 @@ package web
 import (
 	"aurga-web/internal/aurga"
 	"context"
-	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -27,20 +26,26 @@ type Config struct {
 	Hosts      []string
 }
 type Server struct {
-	cfg      Config
-	handler  http.Handler
-	slot     chan struct{}
-	mu       sync.Mutex
-	attempts map[string][]time.Time
+	cfg              Config
+	handler          http.Handler
+	slot             chan struct{}
+	mu               sync.Mutex
+	attempts         map[string][]time.Time
+	sessions         map[string]loginSession
+	discovered       net.IP
+	discoveryExpires time.Time
 }
 
 func New(cfg Config) *Server {
-	s := &Server{cfg: cfg, slot: make(chan struct{}, 1), attempts: map[string][]time.Time{}}
+	s := &Server{cfg: cfg, slot: make(chan struct{}, 1), attempts: map[string][]time.Time{}, sessions: map[string]loginSession{}}
 	mux := http.NewServeMux()
 	root, _ := fs.Sub(assets, "ui")
 	mux.Handle("GET /", http.FileServer(http.FS(root)))
 	mux.HandleFunc("GET /api/device", s.device)
 	mux.HandleFunc("GET /ws", s.connect)
+	mux.HandleFunc("GET /api/auth", s.auth)
+	mux.HandleFunc("POST /api/auth", s.auth)
+	mux.HandleFunc("DELETE /api/auth", s.auth)
 	s.handler = mux
 	return s
 }
@@ -76,7 +81,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) device(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
-	d, e := aurga.Discover(ctx, s.cfg.DeviceIP)
+	ip, e := s.target(r)
+	if e != nil {
+		http.Error(w, e.Error(), 400)
+		return
+	}
+	d, e := aurga.Discover(ctx, ip)
 	if e != nil {
 		http.Error(w, "Device discovery timed out", http.StatusBadGateway)
 		return
@@ -114,14 +124,15 @@ func (s *Server) permitAttempt(remote string) bool {
 
 type command struct {
 	Type     string `json:"type"`
-	Passcode string `json:"passcode,omitempty"`
+	ReadOnly bool   `json:"readOnly,omitempty"`
 	Enabled  bool   `json:"enabled,omitempty"`
 	Report   []byte `json:"report,omitempty"`
 }
 
 func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
-	if !s.permitAttempt(r.RemoteAddr) {
-		http.Error(w, "Too many connection attempts; wait one minute", http.StatusTooManyRequests)
+	passcode, deviceIP, authorized := s.session(r)
+	if !authorized {
+		http.Error(w, "Passcode required", http.StatusUnauthorized)
 		return
 	}
 	ws, e := websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionDisabled})
@@ -139,21 +150,9 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var first command
-	if typ != websocket.MessageText || json.Unmarshal(data, &first) != nil || first.Type != "connect" || len(first.Passcode) > 16 || len(first.Passcode) == 0 {
+	if typ != websocket.MessageText || json.Unmarshal(data, &first) != nil || first.Type != "connect" {
 		ws.Close(websocket.StatusPolicyViolation, "Passcode required")
 		return
-	}
-	if s.cfg.Passcode != "" {
-		if subtle.ConstantTimeCompare([]byte(first.Passcode), []byte(s.cfg.Passcode)) != 1 {
-			ws.Close(websocket.StatusPolicyViolation, "Incorrect passcode")
-			return
-		}
-	} else {
-		cfg, e := aurga.DeviceConfiguration(ctx, s.cfg.DeviceIP, first.Passcode)
-		if e != nil || cfg["rc"] != "0" {
-			ws.Close(websocket.StatusPolicyViolation, "Device authentication failed")
-			return
-		}
 	}
 	select {
 	case s.slot <- struct{}{}:
@@ -162,18 +161,20 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		ws.Close(websocket.StatusTryAgainLater, "Viewer already in use")
 		return
 	}
-	events := make(chan aurga.Event, 8)
+	events := make(chan aurga.Event, 32)
 	inputs := make(chan aurga.Input, 64)
 	result := make(chan error, 1)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		err := (aurga.Session{IP: s.cfg.DeviceIP, Port: s.cfg.StreamPort}).Run(ctx, first.Passcode, inputs, func(ev aurga.Event) {
+		err := (aurga.Session{IP: deviceIP, Port: s.cfg.StreamPort, InitialInput: !first.ReadOnly, Audio: true}).Run(ctx, passcode, inputs, func(ev aurga.Event) {
 			select {
 			case events <- ev:
 			case <-ctx.Done():
 			default:
-				cancel()
+				if ev.Type != "pcm" {
+					cancel()
+				}
 			}
 		})
 		result <- err
@@ -227,9 +228,13 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		case ev := <-events:
 			var message []byte
 			typ := websocket.MessageText
-			if ev.Type == "nal" {
+			if ev.Type == "nal" || ev.Type == "pcm" {
 				typ = websocket.MessageBinary
-				message = ev.Data
+				if ev.Type == "pcm" {
+					message = append([]byte{1}, ev.Data...)
+				} else {
+					message = append([]byte{0}, ev.Data...)
+				}
 			} else {
 				message, _ = json.Marshal(ev)
 			}

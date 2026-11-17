@@ -31,7 +31,7 @@ func TestHostAndOrigin(t *testing.T) {
 		if w.Code != tc.want {
 			t.Fatalf("%+v got %d", tc, w.Code)
 		}
-		if w.Code == 200 && !strings.Contains(w.Body.String(), "LAN viewer") {
+		if w.Code == 200 && !strings.Contains(w.Body.String(), "Remote computer") {
 			t.Fatal("missing UI")
 		}
 	}
@@ -68,17 +68,12 @@ func TestWebsocketWrongPasscode(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	ws, _, e := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws", nil)
-	if e != nil {
-		t.Fatal(e)
+	ws, r, e := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws", nil)
+	if ws != nil {
+		ws.CloseNow()
 	}
-	defer ws.CloseNow()
-	if e = ws.Write(ctx, websocket.MessageText, []byte(`{"type":"connect","passcode":"wrong"}`)); e != nil {
-		t.Fatal(e)
-	}
-	_, _, e = ws.Read(ctx)
-	if websocket.CloseStatus(e) != websocket.StatusPolicyViolation {
-		t.Fatal(e)
+	if e == nil || r.StatusCode != 401 {
+		t.Fatal("unauthenticated websocket admitted")
 	}
 }
 func TestWebsocketUntrustedOrigin(t *testing.T) {

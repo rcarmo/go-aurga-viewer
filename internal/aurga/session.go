@@ -10,10 +10,12 @@ import (
 )
 
 type Event struct {
-	Type    string `json:"type"`
-	Message string `json:"message,omitempty"`
-	Codec   string `json:"codec,omitempty"`
-	Data    []byte `json:"-"`
+	Type       string `json:"type"`
+	Message    string `json:"message,omitempty"`
+	Codec      string `json:"codec,omitempty"`
+	Data       []byte `json:"-"`
+	Channels   int    `json:"channels,omitempty"`
+	SampleRate int    `json:"sampleRate,omitempty"`
 }
 type Input struct {
 	Report  []byte
@@ -21,9 +23,11 @@ type Input struct {
 	Refresh bool
 }
 type Session struct {
-	IP    net.IP
-	Port  int
-	Trace func(string)
+	IP           net.IP
+	Port         int
+	Trace        func(string)
+	InitialInput bool
+	Audio        bool
 }
 
 // Run owns all protocol state and serialises writes. emit must not retain mutable buffers.
@@ -55,17 +59,30 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 	confirmed := false
 	hdmi := false
 	var completedFrames uint16
-	inputEnabled := false
+	inputEnabled := s.InitialInput
+	var audioSequence uint32
+	audioSeen := false
+	audioChannels := 0
+	audioConfig := func(channels, rate int) {
+		if channels < 1 || channels > 8 || rate < 8000 || rate > 192000 {
+			audioChannels = 0
+			return
+		}
+		audioChannels = channels
+		emit(Event{Type: "audio", Channels: channels, SampleRate: rate})
+	}
 	inputReady := false
 	var inputSeq uint32
 	var pendingInput *Packet
 	var inputAt time.Time
 	inputTries := 0
 	var inputQueue [][]byte
+	// Relative zero-motion release avoids a pointer jump on disconnect.
+	releaseReports := [][]byte{{1, 0, 0, 0, 0, 0, 0, 0, 0}, {2, 0, 0, 0, 0}}
 	defer func() {
 		if inputEnabled {
 			c.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
-			for _, report := range [][]byte{{1, 0, 0, 0, 0, 0, 0, 0, 0}, {4, 0, 0, 0, 0, 0, 0}} {
+			for _, report := range releaseReports {
 				inputSeq++
 				b := make([]byte, len(report)+3)
 				le.PutUint16(b, uint16(len(b)))
@@ -144,7 +161,7 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 			}
 			if in.Enable != nil {
 				if !*in.Enable && inputEnabled {
-					for _, report := range [][]byte{{1, 0, 0, 0, 0, 0, 0, 0, 0}, {4, 0, 0, 0, 0, 0, 0}} {
+					for _, report := range releaseReports {
 						inputSeq++
 						b := make([]byte, 3+len(report))
 						le.PutUint16(b, uint16(len(b)))
@@ -204,6 +221,7 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 				acknowledged := queue[0]
 				if acknowledged.Type == 8 && len(acknowledged.Data) > 1 && acknowledged.Data[0] == 2 {
 					inputReady = acknowledged.Data[1] != 0 && inputEnabled
+					emit(Event{Type: "control", Message: fmt.Sprintf("%t", inputReady)})
 				}
 				queue = queue[1:]
 				lastCommand = time.Time{}
@@ -221,6 +239,9 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 					continue
 				}
 				authenticated = true
+				if s.Audio && p.Data[2] != 0 {
+					audioConfig(int(p.Data[3]), int(le.Uint16(p.Data[4:6])))
+				}
 				hdmi = p.Data[6] != 0
 				if len(p.Data) > 58 && p.Data[58] == 1 {
 					codec = "hevc"
@@ -244,8 +265,15 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 				}
 				confirmed = true
 				enqueue(7, 0) // ASClientWakeUp: session activation, separate from Wake-on-LAN.
-				enqueue(1, 0)
-				enqueue(2, 0)
+				audioValue, inputValue := byte(0), byte(0)
+				if s.Audio {
+					audioValue = 1
+				}
+				if inputEnabled {
+					inputValue = 1
+				}
+				enqueue(1, audioValue)
+				enqueue(2, inputValue)
 				enqueue(0, 1)
 				enqueue(5, 0)
 				message := "Connected — no HDMI signal"
@@ -276,9 +304,16 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 					}
 					emit(Event{Type: "nal", Data: frame})
 				}
+			case 1:
+				if confirmed && s.Audio && audioChannels > 0 && len(p.Data) > 0 && len(p.Data) <= 16384 && len(p.Data)%(2*audioChannels) == 0 && (!audioSeen || int32(p.Sequence-audioSequence) > 0) {
+					audioSeen = true
+					audioSequence = p.Sequence
+					emit(Event{Type: "pcm", Data: p.Data})
+				}
 			case 3:
 				if pendingInput != nil && p.Sequence == pendingInput.Sequence {
 					pendingInput = nil
+					emit(Event{Type: "input-ack"})
 				}
 			case 6:
 				p.Data = nil
@@ -299,6 +334,9 @@ func (s Session) Run(ctx context.Context, passcode string, inputs <-chan Input, 
 					emit(Event{Type: "status", Message: "Connected — no HDMI signal"})
 				}
 			case 21:
+				if s.Audio && len(p.Data) >= 8 {
+					audioConfig(int(le.Uint32(p.Data)), int(le.Uint32(p.Data[4:])))
+				}
 				ack := p
 				ack.Data = nil
 				send(ack)
