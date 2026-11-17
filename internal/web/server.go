@@ -157,7 +157,9 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	select {
 	case s.slot <- struct{}{}:
 		defer func() { <-s.slot }()
-	default:
+	case <-ctx.Done():
+		return
+	case <-time.After(time.Second):
 		ws.Close(websocket.StatusTryAgainLater, "Viewer already in use")
 		return
 	}

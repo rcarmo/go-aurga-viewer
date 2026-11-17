@@ -32,6 +32,7 @@ func TestBrowserEndToEnd(t *testing.T) {
 	go func() {
 		defer close(peerDone)
 		buf := make([]byte, 65536)
+		refreshes := 0
 		for {
 			peer.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 			n, addr, e := peer.ReadFromUDP(buf)
@@ -58,6 +59,10 @@ func TestBrowserEndToEnd(t *testing.T) {
 					p.Data = nil
 					peer.WriteToUDP(p.Marshal(), addr)
 					if op == 5 {
+						refreshes++
+						if refreshes == 1 {
+							continue
+						} // Simulate a lost initial keyframe.
 						total := (len(frame) + 1199) / 1200
 						for i := 0; i < total; i++ {
 							end := (i + 1) * 1200
