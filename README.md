@@ -2,7 +2,9 @@
 
 A standalone Go bridge that opens an AURGA KVM's HDMI stream in a browser. The binary embeds the UI and connects directly over the LAN. It needs no cloud account, vendor runtime, Node or Bun at runtime.
 
-**Experimental:** live 1920×1080 H.264 video, discovery and authentication have been verified with firmware 5.0.0.0. Keyboard, mouse, touch and software-keyboard paths pass synthetic end-to-end tests in Chromium and WebKit. Keyboard input has been confirmed on one real host. Relative mouse/touch input and sustained streaming performance still need acceptance; device acknowledgements do not establish host input effects. Audible output has not been verified.
+I wanted my own browser front-end because I found the official application flaky and temperamental. For background, see [my original review of the AURGA Viewer](https://taoofmac.com/space/blog/2024/09/29/1900).
+
+**Experimental:** live 1920×1080 H.264 video, discovery and authentication have been verified with firmware 5.0.0.0. Keyboard, mouse, touch and software-keyboard paths pass synthetic end-to-end tests in Chromium and WebKit. Video, audio and input have also been confirmed working on my setup, including iPad use. Compatibility and sustained streaming performance on other setups remain unverified.
 
 This is an independent interoperability project, not an official AURGA product.
 
