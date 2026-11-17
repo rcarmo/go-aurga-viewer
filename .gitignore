@@ -1,0 +1,8 @@
+node_modules/
+.env
+*.pem
+*.pcap
+*.pcapng
+*.h264
+*.hevc
+*.log

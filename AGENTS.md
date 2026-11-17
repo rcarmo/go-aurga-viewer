@@ -1,0 +1,7 @@
+# aurga-web
+
+Standalone Go bridge and embedded browser UI for one explicitly configured LAN AURGA Viewer. Default device 192.168.1.94. Do not change device configuration, reset, update firmware or send unsolicited input. Live tests start read-only. Never commit passcodes, session secrets or screen captures. Credentials come from AURGA_PASSCODE or an HTTPS UI session and stay in memory.
+
+Use make check and make race. Ordinary tests do not collect profiles. Portable disposable layout: WORKSPACE_TMP_BASE overrides the base; otherwise CI (except empty/0/false) uses RUNNER_TEMP, inherited TMPDIR, /tmp; local uses writable /workspace/tmp or inherited TMPDIR or /tmp. Append aurga-web. Makefile snapshots inherited TMPDIR before exporting scoped runs/, cache/go-build (GOCACHE), cache/go-mod (GOMODCACHE), build/ (GOTMPDIR), cache/bun (BUN_INSTALL_CACHE_DIR), tests/, logs/. No worktree suffix currently. No project-local build caches. Runtime certificates are persistent service data and belong in an explicit state directory or the user's config directory.
+
+Protocol evidence: /workspace/notes/projects/aurga/README.md and evidence/. Vendor libraries/APKs are analysis inputs, not runtime dependencies or project source. Reimplement documented wire behaviour; cite native function names for recovered constants. Include synthetic tests, malformed packets, timeouts and server access controls. Distinguish tests from real-device verification.

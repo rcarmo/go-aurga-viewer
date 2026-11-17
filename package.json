@@ -1,0 +1,1 @@
+{"name":"aurga-web-browser-tests","private":true,"type":"module","devDependencies":{"playwright":"1.62.1"},"scripts":{"browser-test":"bun tests/browser.ts"}}
